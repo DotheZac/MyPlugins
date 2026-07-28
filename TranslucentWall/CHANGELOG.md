@@ -1,3 +1,6 @@
+## 1.3.0
+- Material Index 0, 1을 받도록 수정
+
 ## 1.2.0
 - UV좌표가 아닌 PixelPosition을 받도록 해, 일정한 패턴이 보이도로고 수정
 
