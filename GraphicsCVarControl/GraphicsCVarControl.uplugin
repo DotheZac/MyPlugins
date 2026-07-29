@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 5,
-	"VersionName": "1.4.0",
+	"Version": 6,
+	"VersionName": "1.5.0",
 	"FriendlyName": "Graphics CVar Control",
-	"Description": "Editor tools for controlling graphics CVars and recording continuous baseline and candidate GPU performance snapshots.",
+	"Description": "Editor tools for controlling and documenting graphics CVars, presets, and continuous baseline and candidate GPU performance snapshots.",
 	"Category": "Rendering",
 	"CreatedBy": "",
 	"CreatedByURL": "",

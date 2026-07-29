@@ -1,3 +1,10 @@
+## 1.5.0
+- Lumen Reflection, Lumen GI, Virtual Shadow Map, Volumetric Fog, Separate Translucency, Static Mesh LOD 및 Foliage 진단용 CVar 8개 추가
+- 새 CVar를 기존 Preset 저장 및 Baseline/Candidate Snapshot에 포함하도록 구성
+- Preset 1~5 영역을 왼쪽 고정 사이드바로 분리하고 오른쪽 CVar 목록만 스크롤되도록 UI 개선
+- 프리셋 사이드바 폭과 `Empty`/`Saved` 상태 및 버튼 영역 간격 조정
+- `Anti-Aliasing`, `Resolution`, `Lighting`, `Post Process`, `Geometry`, `Foliage`, `Scalability` 카테고리에 한국어 설명 추가
+
 ## 1.4.0
 - `Start Baseline`, `Start Candidate`, `Stop` 버튼을 이용한 연속 GPU 기록 기능 추가
 - 플레이 구간의 전체 GPU Frame Time을 프레임별로 저장하고 Baseline/Candidate 그래프로 표시

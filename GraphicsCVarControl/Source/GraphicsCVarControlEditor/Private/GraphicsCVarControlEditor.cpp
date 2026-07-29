@@ -225,10 +225,18 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflections"), TEXT("r.Lumen.Reflections.Allow"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Resolution"), TEXT("r.Lumen.Reflections.DownsampleFactor"),
+			{ { TEXT("High"), TEXT("1") }, { TEXT("Balanced"), TEXT("2") }, { TEXT("Performance"), TEXT("4") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Probe Spacing"), TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"),
+			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Shadow Quality"), TEXT("r.ShadowQuality"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("2") }, { TEXT("Max"), TEXT("5") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Virtual Shadows"), TEXT("r.Shadow.Virtual.Enable"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("VSM Directional Rays"), TEXT("r.Shadow.Virtual.SMRT.RayCountDirectional"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("VSM Local Rays"), TEXT("r.Shadow.Virtual.SMRT.RayCountLocal"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Ambient Occlusion"), TEXT("r.AmbientOcclusionLevels"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Low"), TEXT("1") }, { TEXT("High"), TEXT("3") } } });
 
@@ -242,9 +250,18 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("2") }, { TEXT("High"), TEXT("4") } } });
 		Result.Add({ TEXT("Post Process"), TEXT("Volumetric Fog"), TEXT("r.VolumetricFog"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Post Process"), TEXT("Volumetric Fog Grid"), TEXT("r.VolumetricFog.GridPixelSize"),
+			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } } });
+		Result.Add({ TEXT("Post Process"), TEXT("Separate Translucency Resolution"), TEXT("r.SeparateTranslucencyScreenPercentage"),
+			{ { TEXT("50%"), TEXT("50") }, { TEXT("75%"), TEXT("75") }, { TEXT("100%"), TEXT("100") } } });
 
 		Result.Add({ TEXT("Geometry"), TEXT("Nanite"), TEXT("r.Nanite"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Geometry"), TEXT("Static Mesh LOD Distance"), TEXT("r.StaticMeshLODDistanceScale"),
+			{ { TEXT("High"), TEXT("0.5") }, { TEXT("Default"), TEXT("1") }, { TEXT("Performance"), TEXT("2") } } });
+
+		Result.Add({ TEXT("Foliage"), TEXT("Foliage Density"), TEXT("foliage.DensityScale"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Half"), TEXT("0.5") }, { TEXT("Full"), TEXT("1") } } });
 
 		Result.Add({ TEXT("Scalability"), TEXT("Global Illumination"), TEXT("sg.GlobalIlluminationQuality"),
 			{ { TEXT("Low"), TEXT("0") }, { TEXT("Med"), TEXT("1") }, { TEXT("High"), TEXT("2") }, { TEXT("Epic"), TEXT("3") } } });
@@ -276,15 +293,23 @@ static FString GetCVarDescription(const FString& CVarName)
 		{ TEXT("r.ViewDistanceScale"), TEXT("오브젝트가 렌더링되는 거리의 전체 배율을 변경합니다.") },
 		{ TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("Lumen의 Diffuse Indirect Lighting 사용 여부를 변경합니다.") },
 		{ TEXT("r.Lumen.Reflections.Allow"), TEXT("Lumen Reflections 사용 여부를 변경합니다.") },
+		{ TEXT("r.Lumen.Reflections.DownsampleFactor"), TEXT("Lumen Reflection 광선 추적의 다운샘플 배율을 변경합니다. 값이 클수록 내부 해상도와 GPU 비용이 낮아집니다.") },
+		{ TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"), TEXT("Lumen Screen Probe가 배치되는 화면 타일 크기를 변경합니다. 값이 클수록 Probe 수와 GPU 비용이 줄어듭니다.") },
 		{ TEXT("r.ShadowQuality"), TEXT("동적 그림자의 전체 품질 단계를 변경합니다. 0은 그림자를 끕니다.") },
 		{ TEXT("r.Shadow.Virtual.Enable"), TEXT("Virtual Shadow Maps 사용 여부를 변경합니다.") },
+		{ TEXT("r.Shadow.Virtual.SMRT.RayCountDirectional"), TEXT("Directional Light의 Virtual Shadow Map 소프트 섀도 Ray 수를 변경합니다. 값이 높을수록 부드러운 그림자의 품질과 비용이 증가합니다.") },
+		{ TEXT("r.Shadow.Virtual.SMRT.RayCountLocal"), TEXT("Point 및 Spot Light의 Virtual Shadow Map 소프트 섀도 Ray 수를 변경합니다. 값이 높을수록 품질과 비용이 증가합니다.") },
 		{ TEXT("r.AmbientOcclusionLevels"), TEXT("Screen Space Ambient Occlusion의 계산 단계를 변경합니다. 0은 AO를 끕니다.") },
 		{ TEXT("r.MotionBlurQuality"), TEXT("Motion Blur의 품질 단계를 변경합니다. 0은 효과를 끕니다.") },
 		{ TEXT("r.BloomQuality"), TEXT("Bloom 후처리 효과의 품질 단계를 변경합니다. 0은 효과를 끕니다.") },
 		{ TEXT("r.SSR.Quality"), TEXT("Screen Space Reflections의 품질 단계를 변경합니다. 0은 SSR을 끕니다.") },
 		{ TEXT("r.DepthOfFieldQuality"), TEXT("Depth of Field 후처리 효과의 품질 단계를 변경합니다. 0은 효과를 끕니다.") },
 		{ TEXT("r.VolumetricFog"), TEXT("Volumetric Fog 렌더링 사용 여부를 변경합니다.") },
+		{ TEXT("r.VolumetricFog.GridPixelSize"), TEXT("Volumetric Fog 복셀 그리드의 XY 셀 크기를 픽셀 단위로 변경합니다. 값이 클수록 해상도와 GPU 비용이 낮아집니다.") },
+		{ TEXT("r.SeparateTranslucencyScreenPercentage"), TEXT("Separate Translucency의 내부 렌더링 해상도 비율을 변경합니다. 값이 낮을수록 GPU 비용이 줄어듭니다.") },
 		{ TEXT("r.Nanite"), TEXT("현재 플랫폼에서 Nanite 렌더링 사용 여부를 변경합니다.") },
+		{ TEXT("r.StaticMeshLODDistanceScale"), TEXT("Static Mesh의 LOD 전환 거리 배율을 변경합니다. 값이 높을수록 더 낮은 LOD로 빠르게 전환됩니다.") },
+		{ TEXT("foliage.DensityScale"), TEXT("Scalability가 활성화된 Foliage의 렌더링 밀도를 변경합니다. 0은 제거, 1은 원래 밀도입니다.") },
 		{ TEXT("sg.GlobalIlluminationQuality"), TEXT("Global Illumination 관련 Scalability 설정 묶음의 품질 단계를 변경합니다.") },
 		{ TEXT("sg.ReflectionQuality"), TEXT("Reflection 관련 Scalability 설정 묶음의 품질 단계를 변경합니다.") },
 		{ TEXT("sg.ShadowQuality"), TEXT("Shadow 관련 Scalability 설정 묶음의 품질 단계를 변경합니다.") },
@@ -299,6 +324,27 @@ static FString GetCVarDescription(const FString& CVarName)
 	}
 
 	return FString::Printf(TEXT("%s 값을 변경합니다."), *CVarName);
+}
+
+static FString GetCategoryDescription(const FString& Category)
+{
+	static const TMap<FString, FString> Descriptions =
+	{
+		{ TEXT("Anti-Aliasing"), TEXT("계단 현상을 줄이는 방식과 품질을 조절합니다.") },
+		{ TEXT("Resolution"), TEXT("내부 렌더링 해상도와 오브젝트 표시 거리를 조절합니다.") },
+		{ TEXT("Lighting"), TEXT("Lumen, 그림자, Ambient Occlusion 등 조명 계산의 품질과 비용을 조절합니다.") },
+		{ TEXT("Post Process"), TEXT("렌더링 후 적용되는 화면 효과와 Fog, Translucency 품질을 조절합니다.") },
+		{ TEXT("Geometry"), TEXT("Nanite와 Mesh LOD 등 지오메트리 처리 방식을 조절합니다.") },
+		{ TEXT("Foliage"), TEXT("Foliage 인스턴스의 렌더링 밀도를 조절합니다.") },
+		{ TEXT("Scalability"), TEXT("여러 렌더링 설정을 묶은 Unreal 품질 단계를 한 번에 변경합니다.") }
+	};
+
+	if (const FString* Description = Descriptions.Find(Category))
+	{
+		return *Description;
+	}
+
+	return TEXT("이 카테고리에 포함된 그래픽 설정을 조절합니다.");
 }
 
 static FString GetCVarValue(const FString& CVarName)
@@ -384,62 +430,84 @@ public:
 
 	void Construct(const FArguments& InArgs)
 	{
-		TSharedRef<SVerticalBox> Content = SNew(SVerticalBox);
-		FString LastCategory;
-
 		if (InArgs._ShowProfiler)
 		{
-			Content->AddSlot()
-				.AutoHeight()
-				.Padding(0.0f, 0.0f, 0.0f, 14.0f)
+			ChildSlot
+			[
+				SNew(SBorder)
+				.Padding(12.0f)
 				[
-					BuildProfilerSection()
-				];
+					SNew(SScrollBox)
+						+ SScrollBox::Slot()
+						[
+							BuildProfilerSection()
+						]
+				]
+			];
+			return;
 		}
-		else
+
+		TSharedRef<SVerticalBox> PresetContent = SNew(SVerticalBox);
+		PresetContent->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(TEXT("Presets")))
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+			];
+
+		for (int32 PresetIndex = 1; PresetIndex <= 5; ++PresetIndex)
 		{
-			Content->AddSlot()
+			PresetContent->AddSlot()
 				.AutoHeight()
 				.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 				[
-					SNew(STextBlock)
-						.Text(FText::FromString(TEXT("Presets")))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+					BuildPresetRow(PresetIndex)
 				];
+		}
 
-			for (int32 PresetIndex = 1; PresetIndex <= 5; ++PresetIndex)
+		TSharedRef<SVerticalBox> ControlContent = SNew(SVerticalBox);
+		FString LastCategory;
+		for (const FCVarControl& Control : GetGraphicsCVarControls())
+		{
+			const FString Category(Control.Category);
+			if (Category != LastCategory)
 			{
-				Content->AddSlot()
+				const bool bFirstCategory = LastCategory.IsEmpty();
+				LastCategory = Category;
+				const FString CategoryDescription = GetCategoryDescription(Category);
+				ControlContent->AddSlot()
 					.AutoHeight()
-					.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+					.Padding(0.0f, bFirstCategory ? 0.0f : 14.0f, 0.0f, 6.0f)
 					[
-						BuildPresetRow(PresetIndex)
+						SNew(SVerticalBox)
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							[
+								SNew(STextBlock)
+									.Text(FText::FromString(Category))
+									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+							]
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+							[
+								SNew(STextBlock)
+									.Text(FText::FromString(CategoryDescription))
+									.AutoWrapText(true)
+									.ColorAndOpacity(FSlateColor(
+										FLinearColor(0.55f, 0.55f, 0.55f)))
+							]
 					];
 			}
 
-			for (const FCVarControl& Control : GetGraphicsCVarControls())
-			{
-				const FString Category(Control.Category);
-				if (Category != LastCategory)
-				{
-					LastCategory = Category;
-					Content->AddSlot()
-						.AutoHeight()
-						.Padding(0.0f, 14.0f, 0.0f, 6.0f)
-						[
-							SNew(STextBlock)
-								.Text(FText::FromString(Category))
-								.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
-						];
-				}
-
-				Content->AddSlot()
-					.AutoHeight()
-					.Padding(0.0f, 0.0f, 0.0f, 6.0f)
-					[
-						BuildControlRow(Control)
-					];
-			}
+			ControlContent->AddSlot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+				[
+					BuildControlRow(Control)
+				];
 		}
 
 		ChildSlot
@@ -447,11 +515,30 @@ public:
 			SNew(SBorder)
 			.Padding(12.0f)
 			[
-				SNew(SScrollBox)
-				+ SScrollBox::Slot()
-				[
-					Content
-				]
+				SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SBox)
+							.WidthOverride(380.0f)
+							[
+								SNew(SBorder)
+									.Padding(10.0f)
+									[
+										PresetContent
+									]
+							]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(12.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SScrollBox)
+							+ SScrollBox::Slot()
+							[
+								ControlContent
+							]
+					]
 			]
 		];
 	}
@@ -938,7 +1025,7 @@ private:
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
-				.FillWidth(0.34f)
+				.FillWidth(0.22f)
 				.VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
@@ -959,7 +1046,7 @@ private:
 					})
 				]
 				+ SHorizontalBox::Slot()
-				.FillWidth(0.48f)
+				.FillWidth(0.60f)
 				.VAlign(VAlign_Center)
 				[
 					SNew(SHorizontalBox)
