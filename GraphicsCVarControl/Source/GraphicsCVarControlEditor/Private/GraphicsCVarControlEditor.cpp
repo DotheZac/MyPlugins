@@ -8,6 +8,7 @@
 #include "CoreGlobals.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "Textures/SlateIcon.h"
 #include "ToolMenus.h"
@@ -20,10 +21,173 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Widgets/SLeafWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
 static const FName GraphicsCVarControlTabName(TEXT("GraphicsCVarControl"));
 static const FName GraphicsCVarProfilerTabName(TEXT("GraphicsCVarProfiler"));
+
+class SGPUTotalHistoryGraph final : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SGPUTotalHistoryGraph)
+	{}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		(void)InArgs;
+		SetCanTick(true);
+	}
+
+	virtual FVector2D ComputeDesiredSize(const float LayoutScaleMultiplier) const override
+	{
+		(void)LayoutScaleMultiplier;
+		return FVector2D(700.0f, 180.0f);
+	}
+
+	virtual void Tick(
+		const FGeometry& AllottedGeometry,
+		const double InCurrentTime,
+		const float InDeltaTime) override
+	{
+		SLeafWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+		if (FGraphicsCVarProfiler::Get().IsCapturing())
+		{
+			Invalidate(EInvalidateWidgetReason::Paint);
+		}
+	}
+
+	virtual int32 OnPaint(
+		const FPaintArgs& Args,
+		const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect,
+		FSlateWindowElementList& OutDrawElements,
+		const int32 LayerId,
+		const FWidgetStyle& InWidgetStyle,
+		const bool bParentEnabled) const override
+	{
+		(void)Args;
+		(void)MyCullingRect;
+		(void)InWidgetStyle;
+		(void)bParentEnabled;
+
+		const FGraphicsCVarProfiler& Profiler = FGraphicsCVarProfiler::Get();
+		const TArray<double>* BaselineSamples = &Profiler.GetBaseline().GPUFrameSamples;
+		const TArray<double>* CandidateSamples = &Profiler.GetCandidate().GPUFrameSamples;
+		if (Profiler.IsCapturing())
+		{
+			if (Profiler.GetActiveTarget() == EGraphicsCVarCaptureTarget::Baseline)
+			{
+				BaselineSamples = &Profiler.GetActiveGPUFrameSamples();
+			}
+			else
+			{
+				CandidateSamples = &Profiler.GetActiveGPUFrameSamples();
+			}
+		}
+
+		FSlateDrawElement::MakeBox(
+			OutDrawElements,
+			LayerId,
+			AllottedGeometry.ToPaintGeometry(),
+			FCoreStyle::Get().GetBrush("WhiteBrush"),
+			ESlateDrawEffect::None,
+			FLinearColor(0.015f, 0.02f, 0.03f, 1.0f));
+
+		const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
+		for (int32 GridIndex = 1; GridIndex < 4; ++GridIndex)
+		{
+			const float Y = LocalSize.Y * static_cast<float>(GridIndex) / 4.0f;
+			TArray<FVector2D> GridLine;
+			GridLine.Add(FVector2D(0.0f, Y));
+			GridLine.Add(FVector2D(LocalSize.X, Y));
+			FSlateDrawElement::MakeLines(
+				OutDrawElements,
+				LayerId + 1,
+				AllottedGeometry.ToPaintGeometry(),
+				GridLine,
+				ESlateDrawEffect::None,
+				FLinearColor(0.12f, 0.14f, 0.18f, 1.0f),
+				true,
+				1.0f);
+		}
+
+		double MinValue = TNumericLimits<double>::Max();
+		double MaxValue = 0.0;
+		auto IncludeRange = [&MinValue, &MaxValue](const TArray<double>& Samples)
+		{
+			for (const double Sample : Samples)
+			{
+				MinValue = FMath::Min(MinValue, Sample);
+				MaxValue = FMath::Max(MaxValue, Sample);
+			}
+		};
+		IncludeRange(*BaselineSamples);
+		IncludeRange(*CandidateSamples);
+
+		if (MinValue == TNumericLimits<double>::Max())
+		{
+			return LayerId + 1;
+		}
+
+		const double RangePadding = FMath::Max((MaxValue - MinValue) * 0.1, 0.1);
+		MinValue = FMath::Max(0.0, MinValue - RangePadding);
+		MaxValue += RangePadding;
+		const double ValueRange = FMath::Max(MaxValue - MinValue, 0.001);
+
+		auto DrawSeries = [&](
+			const TArray<double>& Samples,
+			const FLinearColor& Color,
+			const int32 SeriesLayer)
+		{
+			if (Samples.Num() < 2)
+			{
+				return;
+			}
+
+			const int32 MaxGraphPoints = FMath::Max(2, FMath::FloorToInt(LocalSize.X));
+			const int32 SampleStep = FMath::Max(
+				1,
+				FMath::CeilToInt(
+					static_cast<double>(Samples.Num()) /
+					static_cast<double>(MaxGraphPoints)));
+			TArray<FVector2D> Points;
+			Points.Reserve(FMath::Min(Samples.Num(), MaxGraphPoints) + 1);
+			for (int32 Index = 0; Index < Samples.Num(); Index += SampleStep)
+			{
+				const float X = LocalSize.X * static_cast<float>(Index) /
+					static_cast<float>(Samples.Num() - 1);
+				const float NormalizedY = static_cast<float>(
+					(Samples[Index] - MinValue) / ValueRange);
+				const float Y = LocalSize.Y * (1.0f - FMath::Clamp(NormalizedY, 0.0f, 1.0f));
+				Points.Add(FVector2D(X, Y));
+			}
+			if ((Samples.Num() - 1) % SampleStep != 0)
+			{
+				const float NormalizedY = static_cast<float>(
+					(Samples.Last() - MinValue) / ValueRange);
+				Points.Add(FVector2D(
+					LocalSize.X,
+					LocalSize.Y * (1.0f - FMath::Clamp(NormalizedY, 0.0f, 1.0f))));
+			}
+
+			FSlateDrawElement::MakeLines(
+				OutDrawElements,
+				SeriesLayer,
+				AllottedGeometry.ToPaintGeometry(),
+				Points,
+				ESlateDrawEffect::None,
+				Color,
+				true,
+				1.5f);
+		};
+
+		DrawSeries(*BaselineSamples, FLinearColor(0.15f, 0.65f, 1.0f), LayerId + 2);
+		DrawSeries(*CandidateSamples, FLinearColor(1.0f, 0.55f, 0.15f), LayerId + 3);
+		return LayerId + 3;
+	}
+};
 
 struct FCVarOption
 {
@@ -433,6 +597,77 @@ private:
 				.AutoHeight()
 				.Padding(0.0f, 0.0f, 0.0f, 4.0f)
 				[
+					SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+								.Text(FText::FromString(TEXT("Continuous Recording")))
+								.ToolTipText(FText::FromString(TEXT(
+									"플레이 중 Stop을 누를 때까지 GPU 시간을 계속 기록합니다.\n"
+									"결과는 선택한 Baseline 또는 Candidate Snapshot에 저장됩니다.")))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(8.0f, 0.0f, 6.0f, 0.0f)
+						[
+							SNew(SButton)
+								.Text(FText::FromString(TEXT("Start Baseline")))
+								.ToolTipText(FText::FromString(TEXT(
+									"현재 CVar 상태로 Baseline 연속 기록을 시작합니다.\n"
+									"플레이 구간 측정이 끝나면 Stop을 누르세요.")))
+								.IsEnabled_Lambda([]()
+								{
+									return !FGraphicsCVarProfiler::Get().IsCapturing();
+								})
+								.OnClicked_Lambda([this]()
+								{
+									StartContinuousCapture(EGraphicsCVarCaptureTarget::Baseline);
+									return FReply::Handled();
+								})
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+						[
+							SNew(SButton)
+								.Text(FText::FromString(TEXT("Start Candidate")))
+								.ToolTipText(FText::FromString(TEXT(
+									"현재 CVar 상태로 Candidate 연속 기록을 시작합니다.\n"
+									"플레이 구간 측정이 끝나면 Stop을 누르세요.")))
+								.IsEnabled_Lambda([]()
+								{
+									return !FGraphicsCVarProfiler::Get().IsCapturing();
+								})
+								.OnClicked_Lambda([this]()
+								{
+									StartContinuousCapture(EGraphicsCVarCaptureTarget::Candidate);
+									return FReply::Handled();
+								})
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+								.Text(FText::FromString(TEXT("Stop")))
+								.ToolTipText(FText::FromString(TEXT(
+									"현재 연속 기록을 종료하고 평균, 최솟값, 최댓값을 Snapshot으로 확정합니다.")))
+								.IsEnabled_Lambda([]()
+								{
+									return FGraphicsCVarProfiler::Get().IsContinuousCapture();
+								})
+								.OnClicked_Lambda([]()
+								{
+									FGraphicsCVarProfiler::Get().StopCapture();
+									return FReply::Handled();
+								})
+						]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+				[
 					SNew(STextBlock)
 						.Text_Lambda([]()
 						{
@@ -446,10 +681,61 @@ private:
 					SNew(SProgressBar)
 						.Percent_Lambda([]() -> TOptional<float>
 						{
-							return FGraphicsCVarProfiler::Get().IsCapturing()
+							return FGraphicsCVarProfiler::Get().IsCapturing() &&
+								!FGraphicsCVarProfiler::Get().IsContinuousCapture()
 								? TOptional<float>(FGraphicsCVarProfiler::Get().GetProgress())
 								: TOptional<float>();
 						})
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 10.0f)
+				[
+					SNew(SBorder)
+						.Padding(6.0f)
+						[
+							SNew(SVerticalBox)
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+								[
+									SNew(SHorizontalBox)
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TEXT("Total GPU Frame History")))
+												.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										.Padding(14.0f, 0.0f, 0.0f, 0.0f)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TEXT("Baseline")))
+												.ColorAndOpacity(FSlateColor(
+													FLinearColor(0.15f, 0.65f, 1.0f)))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										.Padding(10.0f, 0.0f, 0.0f, 0.0f)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TEXT("Candidate")))
+												.ColorAndOpacity(FSlateColor(
+													FLinearColor(1.0f, 0.55f, 0.15f)))
+										]
+								]
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								[
+									SNew(SBox)
+										.HeightOverride(180.0f)
+										[
+											SNew(SGPUTotalHistoryGraph)
+										]
+								]
+						]
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -471,9 +757,31 @@ private:
 		FGraphicsCVarProfiler::Get().StartCapture(Target, CVarValues, SampleFrames);
 	}
 
-	static FString FormatPassValue(const bool bHasValue, const double Value)
+	void StartContinuousCapture(const EGraphicsCVarCaptureTarget Target)
 	{
-		return bHasValue ? FString::Printf(TEXT("%.3f ms"), Value) : TEXT("--");
+		TMap<FString, FString> CVarValues;
+		for (const FCVarControl& Control : GetGraphicsCVarControls())
+		{
+			const FString CVarName(Control.CVarName);
+			CVarValues.Add(CVarName, GetCVarValue(CVarName));
+		}
+
+		FGraphicsCVarProfiler::Get().StartContinuousCapture(Target, CVarValues);
+	}
+
+	static FString FormatPassStats(
+		const bool bHasValue,
+		const double Average,
+		const double Min,
+		const double Max)
+	{
+		return bHasValue
+			? FString::Printf(
+				TEXT("Avg %.3f ms\nMin %.3f  Max %.3f"),
+				Average,
+				Min,
+				Max)
+			: TEXT("--");
 	}
 
 	void RebuildComparisonRows()
@@ -490,28 +798,28 @@ private:
 			[
 				SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot()
-					.FillWidth(0.40f)
+					.FillWidth(0.36f)
 					[
 						SNew(STextBlock)
 							.Text(FText::FromString(TEXT("GPU Pass")))
 							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 					]
 					+ SHorizontalBox::Slot()
-					.FillWidth(0.18f)
+					.FillWidth(0.23f)
 					[
 						SNew(STextBlock)
-							.Text(FText::FromString(TEXT("Baseline")))
+							.Text(FText::FromString(TEXT("Baseline (Avg / Min / Max)")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(0.23f)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(TEXT("Candidate (Avg / Min / Max)")))
 							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 					]
 					+ SHorizontalBox::Slot()
 					.FillWidth(0.18f)
-					[
-						SNew(STextBlock)
-							.Text(FText::FromString(TEXT("Candidate")))
-							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-					]
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.24f)
 					[
 						SNew(STextBlock)
 							.Text(FText::FromString(TEXT("Difference")))
@@ -576,7 +884,7 @@ private:
 						[
 							SNew(SHorizontalBox)
 								+ SHorizontalBox::Slot()
-								.FillWidth(0.40f)
+								.FillWidth(0.36f)
 								.VAlign(VAlign_Center)
 								[
 									SNew(STextBlock)
@@ -584,23 +892,31 @@ private:
 										.ToolTipText(FText::FromString(Row.Id))
 								]
 								+ SHorizontalBox::Slot()
-								.FillWidth(0.18f)
+								.FillWidth(0.23f)
 								.VAlign(VAlign_Center)
 								[
 									SNew(STextBlock)
 										.Text(FText::FromString(
-											FormatPassValue(Row.bHasBaseline, Row.BaselineMs)))
+											FormatPassStats(
+												Row.bHasBaseline,
+												Row.BaselineMs,
+												Row.BaselineMinMs,
+												Row.BaselineMaxMs)))
 								]
 								+ SHorizontalBox::Slot()
-								.FillWidth(0.18f)
+								.FillWidth(0.23f)
 								.VAlign(VAlign_Center)
 								[
 									SNew(STextBlock)
 										.Text(FText::FromString(
-											FormatPassValue(Row.bHasCandidate, Row.CandidateMs)))
+											FormatPassStats(
+												Row.bHasCandidate,
+												Row.CandidateMs,
+												Row.CandidateMinMs,
+												Row.CandidateMaxMs)))
 								]
 								+ SHorizontalBox::Slot()
-								.FillWidth(0.24f)
+								.FillWidth(0.18f)
 								.VAlign(VAlign_Center)
 								[
 									SNew(STextBlock)

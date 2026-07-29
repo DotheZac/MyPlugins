@@ -19,15 +19,33 @@ bool FGraphicsCVarProfiler::StartCapture(
 	const TMap<FString, FString>& CVarValues,
 	const int32 SampleFrames)
 {
+	return StartCaptureInternal(Target, CVarValues, SampleFrames, false);
+}
+
+bool FGraphicsCVarProfiler::StartContinuousCapture(
+	const EGraphicsCVarCaptureTarget Target,
+	const TMap<FString, FString>& CVarValues)
+{
+	return StartCaptureInternal(Target, CVarValues, 0, true);
+}
+
+bool FGraphicsCVarProfiler::StartCaptureInternal(
+	const EGraphicsCVarCaptureTarget Target,
+	const TMap<FString, FString>& CVarValues,
+	const int32 SampleFrames,
+	const bool bContinuous)
+{
 	if (bIsCapturing)
 	{
 		return false;
 	}
 
 	ActiveTarget = Target;
-	RequestedSampleFrames = FMath::Clamp(SampleFrames, 10, 600);
+	bIsContinuousCapture = bContinuous;
+	RequestedSampleFrames = bContinuous ? 0 : FMath::Clamp(SampleFrames, 10, 600);
 	FramesElapsed = 0;
-	GPUFrameSamples.Reset(RequestedSampleFrames);
+	GPUFrameSamples.Reset(bContinuous ? 600 : RequestedSampleFrames);
+	PassAccumulators.Reset();
 	PendingSnapshot = {};
 	PendingSnapshot.Label = Target == EGraphicsCVarCaptureTarget::Baseline
 		? TEXT("Baseline")
@@ -39,11 +57,27 @@ bool FGraphicsCVarProfiler::StartCapture(
 		*PendingSnapshot.Label,
 		WarmupFrames);
 
-	SetGPUStatEnabledForCapture(RequestedSampleFrames);
+	SetGPUStatEnabledForCapture(bContinuous ? 1 : RequestedSampleFrames);
 	bIsCapturing = true;
 	TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateRaw(this, &FGraphicsCVarProfiler::Tick));
 	return true;
+}
+
+void FGraphicsCVarProfiler::StopCapture()
+{
+	if (!IsContinuousCapture())
+	{
+		return;
+	}
+
+	if (TickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+		TickerHandle.Reset();
+	}
+
+	FinishCapture();
 }
 
 void FGraphicsCVarProfiler::ClearSnapshots()
@@ -73,6 +107,7 @@ void FGraphicsCVarProfiler::Shutdown()
 	}
 
 	bIsCapturing = false;
+	bIsContinuousCapture = false;
 }
 
 float FGraphicsCVarProfiler::GetProgress() const
@@ -127,13 +162,24 @@ bool FGraphicsCVarProfiler::Tick(const float DeltaTime)
 
 	const double GPUFrameMs = FPlatformTime::ToMilliseconds64(RHIGetGPUFrameCycles());
 	GPUFrameSamples.Add(GPUFrameMs);
-	LastStatus = FString::Printf(
-		TEXT("%s capture: %d / %d frames"),
-		*PendingSnapshot.Label,
-		GPUFrameSamples.Num(),
-		RequestedSampleFrames);
+	if (bIsContinuousCapture)
+	{
+		AccumulateCurrentPassSamples();
+		LastStatus = FString::Printf(
+			TEXT("%s recording: %d frames (press Stop to finish)"),
+			*PendingSnapshot.Label,
+			GPUFrameSamples.Num());
+	}
+	else
+	{
+		LastStatus = FString::Printf(
+			TEXT("%s capture: %d / %d frames"),
+			*PendingSnapshot.Label,
+			GPUFrameSamples.Num(),
+			RequestedSampleFrames);
+	}
 
-	if (GPUFrameSamples.Num() >= RequestedSampleFrames)
+	if (!bIsContinuousCapture && GPUFrameSamples.Num() >= RequestedSampleFrames)
 	{
 		FinishCapture();
 		TickerHandle.Reset();
@@ -150,6 +196,7 @@ void FGraphicsCVarProfiler::FinishCapture()
 		LastStatus = FString::Printf(TEXT("%s capture failed: no GPU samples"), *PendingSnapshot.Label);
 		RestoreGPUStatState();
 		bIsCapturing = false;
+		bIsContinuousCapture = false;
 		return;
 	}
 
@@ -166,8 +213,17 @@ void FGraphicsCVarProfiler::FinishCapture()
 	PendingSnapshot.AverageGPUFrameMs = Sum / static_cast<double>(GPUFrameSamples.Num());
 	PendingSnapshot.MinGPUFrameMs = Min;
 	PendingSnapshot.MaxGPUFrameMs = Max;
+	PendingSnapshot.GPUFrameSamples = MoveTemp(GPUFrameSamples);
+	PendingSnapshot.SampleFrames = PendingSnapshot.GPUFrameSamples.Num();
 	PendingSnapshot.CapturedAt = FDateTime::Now();
-	ReadGPUPassSnapshot(PendingSnapshot.Passes);
+	if (bIsContinuousCapture)
+	{
+		BuildAccumulatedPassSnapshots(PendingSnapshot.Passes);
+	}
+	else
+	{
+		ReadGPUPassSnapshot(PendingSnapshot.Passes);
+	}
 	PendingSnapshot.bIsValid = true;
 
 	if (ActiveTarget == EGraphicsCVarCaptureTarget::Baseline)
@@ -189,7 +245,48 @@ void FGraphicsCVarProfiler::FinishCapture()
 
 	RestoreGPUStatState();
 	bIsCapturing = false;
+	bIsContinuousCapture = false;
 	++ResultRevision;
+}
+
+void FGraphicsCVarProfiler::AccumulateCurrentPassSamples()
+{
+	TMap<FString, FGraphicsCVarPassSnapshot> CurrentPasses;
+	ReadGPUPassSnapshot(CurrentPasses);
+
+	for (const TPair<FString, FGraphicsCVarPassSnapshot>& Pair : CurrentPasses)
+	{
+		const FGraphicsCVarPassSnapshot& Current = Pair.Value;
+		FGraphicsCVarPassAccumulator& Accumulator = PassAccumulators.FindOrAdd(Pair.Key);
+		Accumulator.Id = Current.Id;
+		Accumulator.DisplayName = Current.DisplayName;
+		Accumulator.SumMs += Current.AverageMs;
+		Accumulator.MinMs = FMath::Min(Accumulator.MinMs, Current.AverageMs);
+		Accumulator.MaxMs = FMath::Max(Accumulator.MaxMs, Current.AverageMs);
+		++Accumulator.SampleCount;
+	}
+}
+
+void FGraphicsCVarProfiler::BuildAccumulatedPassSnapshots(
+	TMap<FString, FGraphicsCVarPassSnapshot>& OutPasses) const
+{
+	OutPasses.Reset();
+	for (const TPair<FString, FGraphicsCVarPassAccumulator>& Pair : PassAccumulators)
+	{
+		const FGraphicsCVarPassAccumulator& Accumulator = Pair.Value;
+		if (Accumulator.SampleCount <= 0)
+		{
+			continue;
+		}
+
+		FGraphicsCVarPassSnapshot Pass;
+		Pass.Id = Accumulator.Id;
+		Pass.DisplayName = Accumulator.DisplayName;
+		Pass.AverageMs = Accumulator.SumMs / static_cast<double>(Accumulator.SampleCount);
+		Pass.MinMs = Accumulator.MinMs;
+		Pass.MaxMs = Accumulator.MaxMs;
+		OutPasses.Add(Pair.Key, MoveTemp(Pass));
+	}
 }
 
 void FGraphicsCVarProfiler::SetGPUStatEnabledForCapture(const int32 SampleFrames)
@@ -319,7 +416,11 @@ TArray<FGraphicsCVarPassComparison> FGraphicsCVarProfiler::BuildComparison() con
 		Total.bHasBaseline = Baseline.bIsValid;
 		Total.bHasCandidate = Candidate.bIsValid;
 		Total.BaselineMs = Baseline.AverageGPUFrameMs;
+		Total.BaselineMinMs = Baseline.MinGPUFrameMs;
+		Total.BaselineMaxMs = Baseline.MaxGPUFrameMs;
 		Total.CandidateMs = Candidate.AverageGPUFrameMs;
+		Total.CandidateMinMs = Candidate.MinGPUFrameMs;
+		Total.CandidateMaxMs = Candidate.MaxGPUFrameMs;
 		Total.DeltaMs = Total.CandidateMs - Total.BaselineMs;
 		if (Total.bHasBaseline && Total.bHasCandidate && !FMath::IsNearlyZero(Total.BaselineMs))
 		{
@@ -350,10 +451,14 @@ TArray<FGraphicsCVarPassComparison> FGraphicsCVarProfiler::BuildComparison() con
 		Row.DisplayName = BaselinePass
 			? BaselinePass->DisplayName
 			: CandidatePass->DisplayName;
-		Row.bHasBaseline = BaselinePass != nullptr;
-		Row.bHasCandidate = CandidatePass != nullptr;
+		Row.bHasBaseline = Baseline.bIsValid;
+		Row.bHasCandidate = Candidate.bIsValid;
 		Row.BaselineMs = BaselinePass ? BaselinePass->AverageMs : 0.0;
+		Row.BaselineMinMs = BaselinePass ? BaselinePass->MinMs : 0.0;
+		Row.BaselineMaxMs = BaselinePass ? BaselinePass->MaxMs : 0.0;
 		Row.CandidateMs = CandidatePass ? CandidatePass->AverageMs : 0.0;
+		Row.CandidateMinMs = CandidatePass ? CandidatePass->MinMs : 0.0;
+		Row.CandidateMaxMs = CandidatePass ? CandidatePass->MaxMs : 0.0;
 		Row.DeltaMs = Row.CandidateMs - Row.BaselineMs;
 		if (Row.bHasBaseline && Row.bHasCandidate && !FMath::IsNearlyZero(Row.BaselineMs))
 		{

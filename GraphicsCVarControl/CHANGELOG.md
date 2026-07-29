@@ -1,3 +1,10 @@
+## 1.4.0
+- `Start Baseline`, `Start Candidate`, `Stop` 버튼을 이용한 연속 GPU 기록 기능 추가
+- 플레이 구간의 전체 GPU Frame Time을 프레임별로 저장하고 Baseline/Candidate 그래프로 표시
+- 전체 GPU Frame 및 GPU Pass별 평균값, 최솟값, 최댓값 기록과 비교 기능 추가
+- 장시간 기록 시 전체 샘플은 유지하면서 그래프 출력 점을 화면 폭에 맞게 축약하도록 최적화
+- 한쪽 Snapshot에서만 감지된 GPU Pass는 누락된 쪽을 `0 ms`로 계산하여 차이를 표시
+
 ## 1.3.0
 - `Graphics CVar Control`과 `GPU Snapshot Comparison`을 각각 독립된 에디터 창과 Tools 메뉴 항목으로 분리
 - 현재 그래픽 CVar 상태를 포함한 Baseline 및 Candidate Snapshot 캡처 기능 추가
