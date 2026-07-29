@@ -12,6 +12,7 @@ public class GraphicsCVarControlEditor : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"RHI",
 				"Slate",
 				"SlateCore",
 				"ToolMenus",
