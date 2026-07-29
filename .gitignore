@@ -1,0 +1,24 @@
+# Plugins 폴더의 모든 항목 무시
+/*
+
+# 아래 폴더만 추적
+!/ShadowControl/
+!/ToonShaderMaterials/
+!/TranslucentWall/
+!/Nubi/
+!/UIEffect/
+!/GraphicsCVarControl/
+
+# 허용한 폴더 내부 파일도 추적
+!/ShadowControl/**
+!/ToonShaderMaterials/**
+!/TranslucentWall/**
+!/Nubi/**
+!/UIEffect/**
+!/GraphicsCVarControl/**
+
+# TranslucentWall 빌드 산출물 제외
+/TranslucentWall/Binaries/
+/TranslucentWall/Intermediate/
+/GraphicsCVarControl/Binaries/
+/GraphicsCVarControl/Intermediate/
