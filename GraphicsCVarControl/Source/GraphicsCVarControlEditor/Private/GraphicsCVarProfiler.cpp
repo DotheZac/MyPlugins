@@ -24,9 +24,10 @@ bool FGraphicsCVarProfiler::StartCapture(
 
 bool FGraphicsCVarProfiler::StartContinuousCapture(
 	const EGraphicsCVarCaptureTarget Target,
-	const TMap<FString, FString>& CVarValues)
+	const TMap<FString, FString>& CVarValues,
+	const int32 TargetFrames)
 {
-	return StartCaptureInternal(Target, CVarValues, 0, true);
+	return StartCaptureInternal(Target, CVarValues, TargetFrames, true);
 }
 
 bool FGraphicsCVarProfiler::StartCaptureInternal(
@@ -42,16 +43,29 @@ bool FGraphicsCVarProfiler::StartCaptureInternal(
 
 	ActiveTarget = Target;
 	bIsContinuousCapture = bContinuous;
-	RequestedSampleFrames = bContinuous ? 0 : FMath::Clamp(SampleFrames, 10, 600);
+	RequestedSampleFrames = bContinuous
+		? SampleFrames > 0
+			? FMath::Clamp(SampleFrames, 10, 36000)
+			: 0
+		: FMath::Clamp(SampleFrames, 10, 600);
 	FramesElapsed = 0;
-	GPUFrameSamples.Reset(bContinuous ? 600 : RequestedSampleFrames);
+	GPUFrameSamples.Reset(
+		bContinuous && RequestedSampleFrames == 0
+			? 600
+			: RequestedSampleFrames);
 	PassAccumulators.Reset();
 	PendingSnapshot = {};
 	PendingSnapshot.Label = Target == EGraphicsCVarCaptureTarget::Baseline
 		? TEXT("Baseline")
 		: TEXT("Candidate");
+	PendingSnapshot.CaptureMode = !bContinuous
+		? TEXT("Fixed Frames")
+		: RequestedSampleFrames > 0
+			? TEXT("Auto Stop")
+			: TEXT("Manual Stop");
 	PendingSnapshot.CVarValues = CVarValues;
 	PendingSnapshot.SampleFrames = RequestedSampleFrames;
+	PendingSnapshot.TargetFrames = RequestedSampleFrames;
 	LastStatus = FString::Printf(
 		TEXT("%s warm-up: 0 / %d"),
 		*PendingSnapshot.Label,
@@ -165,10 +179,21 @@ bool FGraphicsCVarProfiler::Tick(const float DeltaTime)
 	if (bIsContinuousCapture)
 	{
 		AccumulateCurrentPassSamples();
-		LastStatus = FString::Printf(
-			TEXT("%s recording: %d frames (press Stop to finish)"),
-			*PendingSnapshot.Label,
-			GPUFrameSamples.Num());
+		if (RequestedSampleFrames > 0)
+		{
+			LastStatus = FString::Printf(
+				TEXT("%s recording: %d / %d frames"),
+				*PendingSnapshot.Label,
+				GPUFrameSamples.Num(),
+				RequestedSampleFrames);
+		}
+		else
+		{
+			LastStatus = FString::Printf(
+				TEXT("%s recording: %d frames (press Stop to finish)"),
+				*PendingSnapshot.Label,
+				GPUFrameSamples.Num());
+		}
 	}
 	else
 	{
@@ -179,7 +204,10 @@ bool FGraphicsCVarProfiler::Tick(const float DeltaTime)
 			RequestedSampleFrames);
 	}
 
-	if (!bIsContinuousCapture && GPUFrameSamples.Num() >= RequestedSampleFrames)
+	const bool bReachedTarget =
+		RequestedSampleFrames > 0 &&
+		GPUFrameSamples.Num() >= RequestedSampleFrames;
+	if (bReachedTarget)
 	{
 		FinishCapture();
 		TickerHandle.Reset();

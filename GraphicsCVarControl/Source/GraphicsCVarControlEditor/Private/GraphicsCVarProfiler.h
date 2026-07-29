@@ -21,8 +21,10 @@ struct FGraphicsCVarPassSnapshot
 struct FGraphicsCVarSnapshot
 {
 	FString Label;
+	FString CaptureMode;
 	FDateTime CapturedAt;
 	int32 SampleFrames = 0;
+	int32 TargetFrames = 0;
 	TMap<FString, FString> CVarValues;
 	TArray<double> GPUFrameSamples;
 	double AverageGPUFrameMs = 0.0;
@@ -69,13 +71,18 @@ public:
 		int32 SampleFrames);
 	bool StartContinuousCapture(
 		EGraphicsCVarCaptureTarget Target,
-		const TMap<FString, FString>& CVarValues);
+		const TMap<FString, FString>& CVarValues,
+		int32 TargetFrames);
 	void StopCapture();
 	void ClearSnapshots();
 	void Shutdown();
 
 	bool IsCapturing() const { return bIsCapturing; }
 	bool IsContinuousCapture() const { return bIsCapturing && bIsContinuousCapture; }
+	bool HasTargetFrameLimit() const
+	{
+		return IsContinuousCapture() && RequestedSampleFrames > 0;
+	}
 	EGraphicsCVarCaptureTarget GetActiveTarget() const { return ActiveTarget; }
 	const TArray<double>& GetActiveGPUFrameSamples() const { return GPUFrameSamples; }
 	float GetProgress() const;

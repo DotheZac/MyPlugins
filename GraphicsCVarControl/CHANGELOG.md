@@ -1,3 +1,11 @@
+## 1.6.0
+- 연속 GPU 기록에 `Auto Stop` 토글과 `Target Frames` 설정을 추가하여 목표 프레임 도달 시 Snapshot을 자동 확정
+- 수동 종료와 자동 종료 모드를 전환할 수 있도록 구성하고 자동 기록 진행률 및 현재/목표 프레임 표시
+- Baseline/Candidate 비교 결과를 AI 분석용 Markdown 및 JSON 보고서로 내보내는 `Export AI Report` 기능 추가
+- 보고서에 캡처 모드, 목표 프레임, Total 및 Pass별 평균/최소/최대, 변화량, 변화율, Pass 존재 여부, Highlight 기준, CVar 상태 포함
+- AI 분석 규칙, JSON 구조, 권장 분석 순서와 프롬프트를 정리한 `AI_REPORT_GUIDE.md` 추가
+- 생성 보고서를 플러그인의 `Reports` 폴더에 자동 저장하고 보고서 파일은 Git 대상에서 제외하도록 구성
+
 ## 1.5.0
 - Lumen Reflection, Lumen GI, Virtual Shadow Map, Volumetric Fog, Separate Translucency, Static Mesh LOD 및 Foliage 진단용 CVar 8개 추가
 - 새 CVar를 기존 Preset 저장 및 Baseline/Candidate Snapshot에 포함하도록 구성

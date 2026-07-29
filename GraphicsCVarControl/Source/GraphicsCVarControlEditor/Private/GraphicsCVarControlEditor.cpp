@@ -1,6 +1,7 @@
 #include "Modules/ModuleManager.h"
 
 #include "GraphicsCVarProfiler.h"
+#include "GraphicsCVarReportExporter.h"
 
 #include "Containers/Map.h"
 #include "Framework/Commands/UIAction.h"
@@ -14,6 +15,7 @@
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -679,6 +681,46 @@ private:
 									return FReply::Handled();
 								})
 						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(6.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(SButton)
+								.Text(FText::FromString(TEXT("Export AI Report")))
+								.ToolTipText(FText::FromString(TEXT(
+									"Baseline/Candidate 비교 결과를 AI 분석용 Markdown과 JSON 파일로 저장합니다.\n"
+									"플러그인의 Reports 폴더에 자동으로 생성됩니다.\n"
+									"두 Snapshot을 모두 캡처한 뒤 사용할 수 있습니다.")))
+								.IsEnabled_Lambda([]()
+								{
+									const FGraphicsCVarProfiler& Profiler =
+										FGraphicsCVarProfiler::Get();
+									return !Profiler.IsCapturing() &&
+										Profiler.GetBaseline().bIsValid &&
+										Profiler.GetCandidate().bIsValid;
+								})
+								.OnClicked_Lambda([this]()
+								{
+									const FGraphicsCVarReportExportResult Result =
+										FGraphicsCVarReportExporter::ExportComparisonReport(
+											FGraphicsCVarProfiler::Get(),
+											HighlightThresholdMs);
+									if (Result.bSuccess)
+									{
+										ExportStatusMessage = FString::Printf(
+											TEXT("AI report exported: %s and %s"),
+											*Result.MarkdownPath,
+											*Result.JsonPath);
+										bLastExportSucceeded = true;
+									}
+									else
+									{
+										ExportStatusMessage = Result.ErrorMessage;
+										bLastExportSucceeded = false;
+									}
+									return FReply::Handled();
+								})
+						]
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -692,8 +734,68 @@ private:
 							SNew(STextBlock)
 								.Text(FText::FromString(TEXT("Continuous Recording")))
 								.ToolTipText(FText::FromString(TEXT(
-									"플레이 중 Stop을 누를 때까지 GPU 시간을 계속 기록합니다.\n"
+									"수동 모드에서는 Stop을 누를 때까지 GPU 시간을 계속 기록합니다.\n"
+									"Auto Stop 모드에서는 Target Frames에 도달하면 자동 종료합니다.\n"
 									"결과는 선택한 Baseline 또는 Candidate Snapshot에 저장됩니다.")))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(10.0f, 0.0f, 8.0f, 0.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(SCheckBox)
+								.IsChecked_Lambda([this]()
+								{
+									return bAutoStopContinuousCapture
+										? ECheckBoxState::Checked
+										: ECheckBoxState::Unchecked;
+								})
+								.OnCheckStateChanged_Lambda([this](const ECheckBoxState NewState)
+								{
+									bAutoStopContinuousCapture =
+										NewState == ECheckBoxState::Checked;
+								})
+								.IsEnabled_Lambda([]()
+								{
+									return !FGraphicsCVarProfiler::Get().IsCapturing();
+								})
+								.ToolTipText(FText::FromString(TEXT(
+									"켜면 지정한 측정 프레임 수를 기록한 뒤 자동으로 종료합니다.\n"
+									"끄면 Stop 버튼을 누를 때까지 기록합니다.")))
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(TEXT("Auto Stop")))
+								]
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+								.Text(FText::FromString(TEXT("Target Frames")))
+								.ToolTipText(FText::FromString(TEXT(
+									"워밍업 이후 실제로 기록할 목표 프레임 수입니다.")))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(6.0f, 0.0f, 8.0f, 0.0f)
+						[
+							SNew(SSpinBox<int32>)
+								.MinValue(10)
+								.MaxValue(36000)
+								.Value_Lambda([this]() { return ContinuousTargetFrames; })
+								.OnValueChanged_Lambda([this](const int32 NewValue)
+								{
+									ContinuousTargetFrames = NewValue;
+								})
+								.IsEnabled_Lambda([this]()
+								{
+									return bAutoStopContinuousCapture &&
+										!FGraphicsCVarProfiler::Get().IsCapturing();
+								})
+								.ToolTipText(FText::FromString(TEXT(
+									"Auto Stop에서 기록할 프레임 수를 10~36,000 사이로 설정합니다.\n"
+									"기본값 300은 60 FPS 기준 약 5초입니다.")))
 						]
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
@@ -763,13 +865,40 @@ private:
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							return FText::FromString(ExportStatusMessage);
+						})
+						.ColorAndOpacity_Lambda([this]()
+						{
+							return FSlateColor(
+								bLastExportSucceeded
+									? FLinearColor(0.35f, 0.85f, 0.40f)
+									: FLinearColor(1.0f, 0.45f, 0.40f));
+						})
+						.AutoWrapText(true)
+						.Visibility_Lambda([this]()
+						{
+							return ExportStatusMessage.IsEmpty()
+								? EVisibility::Collapsed
+								: EVisibility::Visible;
+						})
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				.Padding(0.0f, 0.0f, 0.0f, 10.0f)
 				[
 					SNew(SProgressBar)
 						.Percent_Lambda([]() -> TOptional<float>
 						{
 							return FGraphicsCVarProfiler::Get().IsCapturing() &&
-								!FGraphicsCVarProfiler::Get().IsContinuousCapture()
+								(
+									!FGraphicsCVarProfiler::Get().IsContinuousCapture() ||
+									FGraphicsCVarProfiler::Get().HasTargetFrameLimit()
+								)
 								? TOptional<float>(FGraphicsCVarProfiler::Get().GetProgress())
 								: TOptional<float>();
 						})
@@ -853,7 +982,10 @@ private:
 			CVarValues.Add(CVarName, GetCVarValue(CVarName));
 		}
 
-		FGraphicsCVarProfiler::Get().StartContinuousCapture(Target, CVarValues);
+		FGraphicsCVarProfiler::Get().StartContinuousCapture(
+			Target,
+			CVarValues,
+			bAutoStopContinuousCapture ? ContinuousTargetFrames : 0);
 	}
 
 	static FString FormatPassStats(
@@ -1171,6 +1303,10 @@ private:
 	}
 
 	int32 SampleFrames = 60;
+	int32 ContinuousTargetFrames = 300;
+	bool bAutoStopContinuousCapture = false;
+	FString ExportStatusMessage;
+	bool bLastExportSucceeded = false;
 	float HighlightThresholdMs = 0.2f;
 	uint64 DisplayedResultRevision = MAX_uint64;
 	TSharedPtr<SVerticalBox> ComparisonRowsBox;

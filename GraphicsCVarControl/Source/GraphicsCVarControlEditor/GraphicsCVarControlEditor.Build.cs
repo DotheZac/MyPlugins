@@ -12,6 +12,8 @@ public class GraphicsCVarControlEditor : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"Json",
+				"Projects",
 				"RHI",
 				"Slate",
 				"SlateCore",
