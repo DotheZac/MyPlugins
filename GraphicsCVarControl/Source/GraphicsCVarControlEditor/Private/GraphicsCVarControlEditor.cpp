@@ -1,5 +1,6 @@
 #include "Modules/ModuleManager.h"
 
+#include "GraphicsCVarDebugViews.h"
 #include "GraphicsCVarProfiler.h"
 #include "GraphicsCVarReportExporter.h"
 
@@ -16,6 +17,7 @@
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -28,6 +30,7 @@
 
 static const FName GraphicsCVarControlTabName(TEXT("GraphicsCVarControl"));
 static const FName GraphicsCVarProfilerTabName(TEXT("GraphicsCVarProfiler"));
+static const FName GraphicsCVarDebugViewsTabName(TEXT("GraphicsCVarDebugViews"));
 
 class SGPUTotalHistoryGraph final : public SLeafWidget
 {
@@ -231,6 +234,22 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 			{ { TEXT("High"), TEXT("1") }, { TEXT("Balanced"), TEXT("2") }, { TEXT("Performance"), TEXT("4") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Probe Spacing"), TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"),
 			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Screen Traces"), TEXT("r.Lumen.ScreenProbeGather.ScreenTraces"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Mesh SDF Tracing"), TEXT("r.Lumen.ScreenProbeGather.TraceMeshSDFs"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Trace Resolution"), TEXT("r.Lumen.ScreenProbeGather.TracingOctahedronResolution"),
+			{ { TEXT("Performance"), TEXT("4") }, { TEXT("Balanced"), TEXT("8") }, { TEXT("High"), TEXT("16") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Gather Resolution"), TEXT("r.Lumen.ScreenProbeGather.GatherOctahedronResolutionScale"),
+			{ { TEXT("Performance"), TEXT("0.5") }, { TEXT("Balanced"), TEXT("1") }, { TEXT("High"), TEXT("2") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Adaptive Probes"), TEXT("r.Lumen.ScreenProbeGather.NumAdaptiveProbes"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Low"), TEXT("4") }, { TEXT("Medium"), TEXT("8") }, { TEXT("High"), TEXT("16") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Screen Traces"), TEXT("r.Lumen.Reflections.ScreenTraces"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Mesh SDF Tracing"), TEXT("r.Lumen.Reflections.TraceMeshSDFs"),
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Max Roughness"), TEXT("r.Lumen.Reflections.MaxRoughnessToTrace"),
+			{ { TEXT("Use PPV"), TEXT("-1") }, { TEXT("0.4"), TEXT("0.4") }, { TEXT("0.6"), TEXT("0.6") }, { TEXT("0.8"), TEXT("0.8") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Shadow Quality"), TEXT("r.ShadowQuality"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("2") }, { TEXT("Max"), TEXT("5") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Virtual Shadows"), TEXT("r.Shadow.Virtual.Enable"),
@@ -297,6 +316,14 @@ static FString GetCVarDescription(const FString& CVarName)
 		{ TEXT("r.Lumen.Reflections.Allow"), TEXT("Lumen Reflections 사용 여부를 변경합니다.") },
 		{ TEXT("r.Lumen.Reflections.DownsampleFactor"), TEXT("Lumen Reflection 광선 추적의 다운샘플 배율을 변경합니다. 값이 클수록 내부 해상도와 GPU 비용이 낮아집니다.") },
 		{ TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"), TEXT("Lumen Screen Probe가 배치되는 화면 타일 크기를 변경합니다. 값이 클수록 Probe 수와 GPU 비용이 줄어듭니다.") },
+		{ TEXT("r.Lumen.ScreenProbeGather.ScreenTraces"), TEXT("Lumen GI가 다른 추적 방식으로 넘어가기 전에 화면에 보이는 정보를 먼저 추적할지 변경합니다.") },
+		{ TEXT("r.Lumen.ScreenProbeGather.TraceMeshSDFs"), TEXT("Lumen GI의 Software Ray Tracing에서 Mesh Distance Field를 추적할지 변경합니다. Hardware Ray Tracing 사용 시 영향이 없을 수 있습니다.") },
+		{ TEXT("r.Lumen.ScreenProbeGather.TracingOctahedronResolution"), TEXT("Screen Probe 하나에서 수행하는 추적의 방향 해상도를 변경합니다. 값이 높을수록 Ray 수와 GPU 비용이 증가합니다.") },
+		{ TEXT("r.Lumen.ScreenProbeGather.GatherOctahedronResolutionScale"), TEXT("Screen Probe 필터링과 적분 해상도의 배율을 변경합니다. 값이 높을수록 품질과 GPU 비용이 증가합니다.") },
+		{ TEXT("r.Lumen.ScreenProbeGather.NumAdaptiveProbes"), TEXT("기본 Screen Probe마다 추가로 배치할 수 있는 Adaptive Probe 수를 변경합니다. 장면에 따라 세부 간접광과 GPU 비용이 증가합니다.") },
+		{ TEXT("r.Lumen.Reflections.ScreenTraces"), TEXT("Lumen Reflection이 다른 추적 방식으로 넘어가기 전에 화면에 보이는 정보를 먼저 추적할지 변경합니다.") },
+		{ TEXT("r.Lumen.Reflections.TraceMeshSDFs"), TEXT("Lumen Reflection의 Software Ray Tracing에서 Mesh Distance Field를 추적할지 변경합니다. Hardware Ray Tracing 사용 시 영향이 없을 수 있습니다.") },
+		{ TEXT("r.Lumen.Reflections.MaxRoughnessToTrace"), TEXT("Lumen이 전용 Reflection Ray를 추적할 최대 Roughness를 변경합니다. Use PPV는 -1을 적용하여 Post Process Volume 설정을 사용합니다.") },
 		{ TEXT("r.ShadowQuality"), TEXT("동적 그림자의 전체 품질 단계를 변경합니다. 0은 그림자를 끕니다.") },
 		{ TEXT("r.Shadow.Virtual.Enable"), TEXT("Virtual Shadow Maps 사용 여부를 변경합니다.") },
 		{ TEXT("r.Shadow.Virtual.SMRT.RayCountDirectional"), TEXT("Directional Light의 Virtual Shadow Map 소프트 섀도 Ray 수를 변경합니다. 값이 높을수록 부드러운 그림자의 품질과 비용이 증가합니다.") },
@@ -470,6 +497,22 @@ public:
 		}
 
 		TSharedRef<SVerticalBox> ControlContent = SNew(SVerticalBox);
+		ControlContent->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(TEXT(
+						"No CVar options match the search text.")))
+					.ColorAndOpacity(FSlateColor(
+						FLinearColor(0.75f, 0.55f, 0.25f)))
+					.Visibility_Lambda([this]()
+					{
+						return HasAnyControlMatch()
+							? EVisibility::Collapsed
+							: EVisibility::Visible;
+					})
+			];
 		FString LastCategory;
 		for (const FCVarControl& Control : GetGraphicsCVarControls())
 		{
@@ -484,6 +527,12 @@ public:
 					.Padding(0.0f, bFirstCategory ? 0.0f : 14.0f, 0.0f, 6.0f)
 					[
 						SNew(SVerticalBox)
+							.Visibility_Lambda([this, Category]()
+							{
+								return DoesCategoryHaveMatch(Category)
+									? EVisibility::Visible
+									: EVisibility::Collapsed;
+							})
 							+ SVerticalBox::Slot()
 							.AutoHeight()
 							[
@@ -535,10 +584,29 @@ public:
 					.FillWidth(1.0f)
 					.Padding(12.0f, 0.0f, 0.0f, 0.0f)
 					[
-						SNew(SScrollBox)
-							+ SScrollBox::Slot()
+						SNew(SVerticalBox)
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							.Padding(0.0f, 0.0f, 0.0f, 10.0f)
 							[
-								ControlContent
+								SNew(SSearchBox)
+									.HintText(FText::FromString(TEXT(
+										"Search CVar options...")))
+									.OnTextChanged_Lambda([this](const FText& NewText)
+									{
+										ControlSearchText = NewText.ToString();
+										ControlSearchText.TrimStartAndEndInline();
+										Invalidate(EInvalidateWidgetReason::Layout);
+									})
+							]
+							+ SVerticalBox::Slot()
+							.FillHeight(1.0f)
+							[
+								SNew(SScrollBox)
+									+ SScrollBox::Slot()
+									[
+										ControlContent
+									]
 							]
 					]
 			]
@@ -561,6 +629,44 @@ public:
 	}
 
 private:
+	bool DoesControlMatch(const FCVarControl& Control) const
+	{
+		return ControlSearchText.IsEmpty() ||
+			FString(Control.Category).Contains(
+				ControlSearchText,
+				ESearchCase::IgnoreCase) ||
+			FString(Control.DisplayName).Contains(
+				ControlSearchText,
+				ESearchCase::IgnoreCase) ||
+			FString(Control.CVarName).Contains(
+				ControlSearchText,
+				ESearchCase::IgnoreCase);
+	}
+
+	bool DoesCategoryHaveMatch(const FString& Category) const
+	{
+		for (const FCVarControl& Control : GetGraphicsCVarControls())
+		{
+			if (Category == Control.Category && DoesControlMatch(Control))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool HasAnyControlMatch() const
+	{
+		for (const FCVarControl& Control : GetGraphicsCVarControls())
+		{
+			if (DoesControlMatch(Control))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	TSharedRef<SWidget> BuildProfilerSection()
 	{
 		return SNew(SBorder)
@@ -688,21 +794,20 @@ private:
 							SNew(SButton)
 								.Text(FText::FromString(TEXT("Export AI Report")))
 								.ToolTipText(FText::FromString(TEXT(
-									"Baseline/Candidate 비교 결과를 AI 분석용 Markdown과 JSON 파일로 저장합니다.\n"
+									"Baseline 단독 분석 또는 Baseline/Candidate 비교 결과를 AI 분석용 Markdown과 JSON 파일로 저장합니다.\n"
 									"플러그인의 Reports 폴더에 자동으로 생성됩니다.\n"
-									"두 Snapshot을 모두 캡처한 뒤 사용할 수 있습니다.")))
+									"Baseline만 캡처한 상태에서도 사용할 수 있습니다.")))
 								.IsEnabled_Lambda([]()
 								{
 									const FGraphicsCVarProfiler& Profiler =
 										FGraphicsCVarProfiler::Get();
 									return !Profiler.IsCapturing() &&
-										Profiler.GetBaseline().bIsValid &&
-										Profiler.GetCandidate().bIsValid;
+										Profiler.GetBaseline().bIsValid;
 								})
 								.OnClicked_Lambda([this]()
 								{
 									const FGraphicsCVarReportExportResult Result =
-										FGraphicsCVarReportExporter::ExportComparisonReport(
+										FGraphicsCVarReportExporter::ExportReport(
 											FGraphicsCVarProfiler::Get(),
 											HighlightThresholdMs);
 									if (Result.bSuccess)
@@ -1262,6 +1367,12 @@ private:
 		return SNew(SBorder)
 			.Padding(8.0f)
 			.ToolTipText(FText::FromString(Description))
+			.Visibility_Lambda([this, Control]()
+			{
+				return DoesControlMatch(Control)
+					? EVisibility::Visible
+					: EVisibility::Collapsed;
+			})
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
@@ -1305,6 +1416,7 @@ private:
 	int32 SampleFrames = 60;
 	int32 ContinuousTargetFrames = 300;
 	bool bAutoStopContinuousCapture = false;
+	FString ControlSearchText;
 	FString ExportStatusMessage;
 	bool bLastExportSucceeded = false;
 	float HighlightThresholdMs = 0.2f;
@@ -1329,6 +1441,12 @@ public:
 			.SetDisplayName(FText::FromString(TEXT("GPU Snapshot Comparison")))
 			.SetMenuType(ETabSpawnerMenuType::Hidden);
 
+		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+			GraphicsCVarDebugViewsTabName,
+			FOnSpawnTab::CreateRaw(this, &FGraphicsCVarControlEditorModule::SpawnDebugViewsTab))
+			.SetDisplayName(FText::FromString(TEXT("Rendering Debug Views")))
+			.SetMenuType(ETabSpawnerMenuType::Hidden);
+
 		UToolMenus::RegisterStartupCallback(
 			FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FGraphicsCVarControlEditorModule::RegisterMenus));
 	}
@@ -1340,6 +1458,7 @@ public:
 		UToolMenus::UnregisterOwner(this);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarControlTabName);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarProfilerTabName);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarDebugViewsTabName);
 	}
 
 private:
@@ -1375,6 +1494,21 @@ private:
 			];
 	}
 
+	TSharedRef<SDockTab> SpawnDebugViewsTab(const FSpawnTabArgs& Args)
+	{
+		(void)Args;
+
+		return SNew(SDockTab)
+			.TabRole(ETabRole::NomadTab)
+			[
+				SNew(SBox)
+					.WidthOverride(720.0f)
+					[
+						SNew(SGraphicsCVarDebugViewsPanel)
+					]
+			];
+	}
+
 	void RegisterMenus()
 	{
 		FToolMenuOwnerScoped OwnerScoped(this);
@@ -1394,6 +1528,13 @@ private:
 			FText::FromString(TEXT("Open GPU baseline and candidate comparison.")),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateStatic(&FGraphicsCVarControlEditorModule::OpenProfilerTab)));
+
+		Section.AddMenuEntry(
+			TEXT("OpenGraphicsCVarDebugViews"),
+			FText::FromString(TEXT("Rendering Debug Views")),
+			FText::FromString(TEXT("Open viewport rendering visualization controls.")),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateStatic(&FGraphicsCVarControlEditorModule::OpenDebugViewsTab)));
 	}
 
 	static void OpenControlTab()
@@ -1404,6 +1545,11 @@ private:
 	static void OpenProfilerTab()
 	{
 		FGlobalTabmanager::Get()->TryInvokeTab(GraphicsCVarProfilerTabName);
+	}
+
+	static void OpenDebugViewsTab()
+	{
+		FGlobalTabmanager::Get()->TryInvokeTab(GraphicsCVarDebugViewsTabName);
 	}
 };
 

@@ -15,7 +15,7 @@ struct FGraphicsCVarReportExportResult
 class FGraphicsCVarReportExporter
 {
 public:
-	static FGraphicsCVarReportExportResult ExportComparisonReport(
+	static FGraphicsCVarReportExportResult ExportReport(
 		const FGraphicsCVarProfiler& Profiler,
 		double HighlightThresholdMs);
 };

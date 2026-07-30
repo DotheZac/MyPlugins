@@ -122,6 +122,178 @@ namespace
 		return Json;
 	}
 
+	TArray<FGraphicsCVarPassSnapshot> SortBaselinePassesByAverage(
+		const FGraphicsCVarSnapshot& Baseline)
+	{
+		TArray<FGraphicsCVarPassSnapshot> Sorted;
+		Baseline.Passes.GenerateValueArray(Sorted);
+		Sorted.Sort([](
+			const FGraphicsCVarPassSnapshot& A,
+			const FGraphicsCVarPassSnapshot& B)
+		{
+			return A.AverageMs > B.AverageMs;
+		});
+		return Sorted;
+	}
+
+	double GetPercentOfTotal(
+		const double PassAverageMs,
+		const FGraphicsCVarSnapshot& Baseline)
+	{
+		return Baseline.AverageGPUFrameMs > UE_DOUBLE_SMALL_NUMBER
+			? PassAverageMs / Baseline.AverageGPUFrameMs * 100.0
+			: 0.0;
+	}
+
+	FString BuildBaselineMarkdownReport(const FGraphicsCVarSnapshot& Baseline)
+	{
+		FString Report;
+		Report += TEXT("# Unreal Engine GPU Baseline Analysis Report\n\n");
+		Report += FString::Printf(
+			TEXT("- Generated: `%s`\n- Project: `%s`\n- Engine: `%s`\n- Platform: `%hs`\n\n"),
+			*FDateTime::Now().ToIso8601(),
+			FApp::GetProjectName(),
+			*FEngineVersion::Current().ToString(),
+			FPlatformProperties::PlatformName());
+
+		Report += TEXT("## Instructions for AI Analysis\n\n");
+		Report += TEXT("- This report contains one Baseline capture and has no Candidate comparison.\n");
+		Report += TEXT("- Identify the most expensive GPU passes by average time, then inspect passes with a large min/max range for spikes or instability.\n");
+		Report += TEXT("- Use `Percent of Total GPU` only as a relative prioritization hint. GPU passes can overlap or be nested, so percentages must not be added together.\n");
+		Report += TEXT("- Correlate active CVars with expensive passes, but distinguish correlation from confirmed causation.\n");
+		Report += TEXT("- Consider capture duration, intermittent passes, editor measurement overhead, scene content, resolution, and platform before drawing conclusions.\n");
+		Report += TEXT("- Respond with: executive summary, top optimization targets, likely causes, confidence level, recommended CVar or content experiments, and verification steps.\n\n");
+
+		Report += TEXT("## Capture Summary\n\n");
+		Report += TEXT("| Capture | Time | Mode | Frames | Target | Avg ms | Min ms | Max ms | GPU Passes |\n");
+		Report += TEXT("|---|---|---|---:|---:|---:|---:|---:|---:|\n");
+		Report += FString::Printf(
+			TEXT("| %s | %s | %s | %d | %d | %.3f | %.3f | %.3f | %d |\n"),
+			*EscapeMarkdownCell(Baseline.Label),
+			*EscapeMarkdownCell(Baseline.CapturedAt.ToIso8601()),
+			*EscapeMarkdownCell(Baseline.CaptureMode),
+			Baseline.SampleFrames,
+			Baseline.TargetFrames,
+			Baseline.AverageGPUFrameMs,
+			Baseline.MinGPUFrameMs,
+			Baseline.MaxGPUFrameMs,
+			Baseline.Passes.Num());
+
+		const TArray<FGraphicsCVarPassSnapshot> SortedPasses =
+			SortBaselinePassesByAverage(Baseline);
+		Report += TEXT("\n## Top Optimization Starting Points\n\n");
+		Report += TEXT("| Rank | GPU Pass | Avg ms | Min ms | Max ms | Range ms | Percent of Total GPU |\n");
+		Report += TEXT("|---:|---|---:|---:|---:|---:|---:|\n");
+		const int32 PriorityCount = FMath::Min(15, SortedPasses.Num());
+		for (int32 Index = 0; Index < PriorityCount; ++Index)
+		{
+			const FGraphicsCVarPassSnapshot& Pass = SortedPasses[Index];
+			Report += FString::Printf(
+				TEXT("| %d | %s | %.3f | %.3f | %.3f | %.3f | %.1f%% |\n"),
+				Index + 1,
+				*EscapeMarkdownCell(Pass.DisplayName),
+				Pass.AverageMs,
+				Pass.MinMs,
+				Pass.MaxMs,
+				Pass.MaxMs - Pass.MinMs,
+				GetPercentOfTotal(Pass.AverageMs, Baseline));
+		}
+		if (PriorityCount == 0)
+		{
+			Report += TEXT("| - | No GPU passes captured | 0 | 0 | 0 | 0 | 0% |\n");
+		}
+
+		Report += TEXT("\n## Full GPU Pass Timings\n\n");
+		Report += TEXT("| GPU Pass | Avg ms | Min ms | Max ms | Range ms | Percent of Total GPU |\n");
+		Report += TEXT("|---|---:|---:|---:|---:|---:|\n");
+		for (const FGraphicsCVarPassSnapshot& Pass : SortedPasses)
+		{
+			Report += FString::Printf(
+				TEXT("| %s | %.3f | %.3f | %.3f | %.3f | %.1f%% |\n"),
+				*EscapeMarkdownCell(Pass.DisplayName),
+				Pass.AverageMs,
+				Pass.MinMs,
+				Pass.MaxMs,
+				Pass.MaxMs - Pass.MinMs,
+				GetPercentOfTotal(Pass.AverageMs, Baseline));
+		}
+
+		Report += TEXT("\n## Managed CVar Snapshot\n\n");
+		Report += TEXT("| CVar | Value |\n|---|---|\n");
+		TArray<FString> CVarNames;
+		Baseline.CVarValues.GetKeys(CVarNames);
+		CVarNames.Sort();
+		for (const FString& Name : CVarNames)
+		{
+			Report += FString::Printf(
+				TEXT("| `%s` | `%s` |\n"),
+				*EscapeMarkdownCell(Name),
+				*EscapeMarkdownCell(Baseline.CVarValues.FindChecked(Name)));
+		}
+		return Report;
+	}
+
+	FString BuildBaselineJsonReport(const FGraphicsCVarSnapshot& Baseline)
+	{
+		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetNumberField(TEXT("schema_version"), ReportSchemaVersion);
+		Root->SetStringField(
+			TEXT("report_type"),
+			TEXT("unreal_engine_gpu_baseline_analysis"));
+		Root->SetStringField(TEXT("generated_at"), FDateTime::Now().ToIso8601());
+
+		TSharedRef<FJsonObject> Environment = MakeShared<FJsonObject>();
+		Environment->SetStringField(TEXT("project"), FApp::GetProjectName());
+		Environment->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+		Environment->SetStringField(TEXT("platform"), FPlatformProperties::PlatformName());
+		Root->SetObjectField(TEXT("environment"), Environment);
+
+		TArray<TSharedPtr<FJsonValue>> Instructions;
+		Instructions.Add(MakeShared<FJsonValueString>(
+			TEXT("Analyze this Baseline without assuming a Candidate comparison exists.")));
+		Instructions.Add(MakeShared<FJsonValueString>(
+			TEXT("Prioritize passes with high average_ms and inspect large timing_range_ms values for instability.")));
+		Instructions.Add(MakeShared<FJsonValueString>(
+			TEXT("GPU passes can overlap or be nested; do not add percent_of_total_gpu values together.")));
+		Instructions.Add(MakeShared<FJsonValueString>(
+			TEXT("Correlate active CVars with expensive passes, but do not claim causation without verification.")));
+		Root->SetArrayField(TEXT("analysis_instructions"), MoveTemp(Instructions));
+		Root->SetObjectField(TEXT("baseline"), MakeSnapshotJson(Baseline));
+
+		const TArray<FGraphicsCVarPassSnapshot> SortedPasses =
+			SortBaselinePassesByAverage(Baseline);
+		TArray<TSharedPtr<FJsonValue>> OptimizationCandidates;
+		const int32 PriorityCount = FMath::Min(15, SortedPasses.Num());
+		OptimizationCandidates.Reserve(PriorityCount);
+		for (int32 Index = 0; Index < PriorityCount; ++Index)
+		{
+			const FGraphicsCVarPassSnapshot& Pass = SortedPasses[Index];
+			TSharedRef<FJsonObject> CandidateJson = MakeShared<FJsonObject>();
+			CandidateJson->SetNumberField(TEXT("priority_rank"), Index + 1);
+			CandidateJson->SetStringField(TEXT("id"), Pass.Id);
+			CandidateJson->SetStringField(TEXT("display_name"), Pass.DisplayName);
+			CandidateJson->SetObjectField(
+				TEXT("timing"),
+				MakeTimingJson(Pass.AverageMs, Pass.MinMs, Pass.MaxMs));
+			CandidateJson->SetNumberField(
+				TEXT("timing_range_ms"),
+				Pass.MaxMs - Pass.MinMs);
+			CandidateJson->SetNumberField(
+				TEXT("percent_of_total_gpu"),
+				GetPercentOfTotal(Pass.AverageMs, Baseline));
+			OptimizationCandidates.Add(
+				MakeShared<FJsonValueObject>(CandidateJson));
+		}
+		Root->SetArrayField(
+			TEXT("optimization_candidates"),
+			MoveTemp(OptimizationCandidates));
+
+		FString JsonText;
+		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonText);
+		FJsonSerializer::Serialize(Root, Writer);
+		return JsonText;
+	}
+
 	TArray<FString> BuildChangedCVarNames(
 		const FGraphicsCVarSnapshot& Baseline,
 		const FGraphicsCVarSnapshot& Candidate)
@@ -414,18 +586,19 @@ namespace
 	}
 }
 
-FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportComparisonReport(
+FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportReport(
 	const FGraphicsCVarProfiler& Profiler,
 	const double HighlightThresholdMs)
 {
 	FGraphicsCVarReportExportResult Result;
 	const FGraphicsCVarSnapshot& Baseline = Profiler.GetBaseline();
 	const FGraphicsCVarSnapshot& Candidate = Profiler.GetCandidate();
-	if (!Baseline.bIsValid || !Candidate.bIsValid)
+	if (!Baseline.bIsValid)
 	{
-		Result.ErrorMessage = TEXT("Capture both Baseline and Candidate before exporting.");
+		Result.ErrorMessage = TEXT("Capture a Baseline before exporting.");
 		return Result;
 	}
+	const bool bHasCandidate = Candidate.bIsValid;
 
 	const TSharedPtr<IPlugin> Plugin =
 		IPluginManager::Get().FindPlugin(TEXT("GraphicsCVarControl"));
@@ -453,7 +626,8 @@ FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportComparisonRep
 		*Now.ToString(TEXT("%Y%m%d_%H%M%S")),
 		Now.GetMillisecond());
 	const FString BaseFileName = FString::Printf(
-		TEXT("GPUProfile_%s"),
+		TEXT("%s_%s"),
+		bHasCandidate ? TEXT("GPUProfile") : TEXT("GPUBaseline"),
 		*Timestamp);
 	Result.MarkdownPath = FPaths::Combine(
 		ReportDirectory,
@@ -462,20 +636,31 @@ FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportComparisonRep
 		ReportDirectory,
 		BaseFileName + TEXT(".json"));
 
-	const TArray<FGraphicsCVarPassComparison> Rows = Profiler.BuildComparison();
-	const TArray<FString> ChangedCVarNames = BuildChangedCVarNames(Baseline, Candidate);
-	const FString Markdown = BuildMarkdownReport(
-		Baseline,
-		Candidate,
-		Rows,
-		ChangedCVarNames,
-		HighlightThresholdMs);
-	const FString Json = BuildJsonReport(
-		Baseline,
-		Candidate,
-		Rows,
-		ChangedCVarNames,
-		HighlightThresholdMs);
+	FString Markdown;
+	FString Json;
+	if (bHasCandidate)
+	{
+		const TArray<FGraphicsCVarPassComparison> Rows = Profiler.BuildComparison();
+		const TArray<FString> ChangedCVarNames =
+			BuildChangedCVarNames(Baseline, Candidate);
+		Markdown = BuildMarkdownReport(
+			Baseline,
+			Candidate,
+			Rows,
+			ChangedCVarNames,
+			HighlightThresholdMs);
+		Json = BuildJsonReport(
+			Baseline,
+			Candidate,
+			Rows,
+			ChangedCVarNames,
+			HighlightThresholdMs);
+	}
+	else
+	{
+		Markdown = BuildBaselineMarkdownReport(Baseline);
+		Json = BuildBaselineJsonReport(Baseline);
+	}
 
 	const bool bMarkdownSaved = FFileHelper::SaveStringToFile(
 		Markdown,

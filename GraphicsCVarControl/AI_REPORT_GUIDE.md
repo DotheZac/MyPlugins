@@ -2,22 +2,26 @@
 
 ## 목적
 
-이 문서는 `Graphics CVar Control` 플러그인이 내보낸 GPU Baseline/Candidate 보고서를 AI가 일관된 기준으로 해석하기 위한 가이드입니다.
+이 문서는 `Graphics CVar Control` 플러그인이 내보낸 GPU Baseline 단독 분석 보고서와 Baseline/Candidate 비교 보고서를 AI가 일관된 기준으로 해석하기 위한 가이드입니다.
 
 AI에게 다음 파일을 함께 제공하는 방식을 권장합니다.
 
 1. 이 `AI_REPORT_GUIDE.md`
-2. 측정 후 생성된 `GPUProfile_*.md`
-3. 세부 데이터나 자동 처리가 필요하면 같은 이름의 `GPUProfile_*.json`
+2. 측정 후 생성된 `GPUBaseline_*.md` 또는 `GPUProfile_*.md`
+3. 세부 데이터나 자동 처리가 필요하면 같은 이름의 `.json`
 
-내보낸 `GPUProfile_*.md`에도 핵심 분석 지침이 포함되어 있으므로 해당 파일만 전달해도 기본 분석은 가능합니다.
+내보낸 Markdown 보고서에도 핵심 분석 지침이 포함되어 있으므로 해당 파일만 전달해도 기본 분석은 가능합니다.
 
 ## 생성 파일
 
 `Export AI Report`를 누르면 플러그인의 `Reports` 폴더에 같은 이름으로 두 파일이 생성됩니다.
 
-- `GPUProfile_YYYYMMDD_HHMMSS.md`
-- `GPUProfile_YYYYMMDD_HHMMSS.json`
+- `GPUProfile_YYYYMMDD_HHMMSS_MMM.md`
+- `GPUProfile_YYYYMMDD_HHMMSS_MMM.json`
+- `GPUBaseline_YYYYMMDD_HHMMSS_MMM.md`
+- `GPUBaseline_YYYYMMDD_HHMMSS_MMM.json`
+
+Candidate가 있으면 `GPUProfile_*`, Baseline만 있으면 `GPUBaseline_*` 보고서가 생성됩니다.
 
 현재 프로젝트의 기본 저장 경로는 다음과 같습니다.
 
@@ -39,8 +43,19 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 - GPU 악화 및 개선 상위 항목
 - 전체 GPU Pass 비교
 - 관리 대상 CVar 전체 상태
+- Baseline 단독 보고서의 상위 최적화 후보와 Pass별 변동 폭
 
 일반적인 AI 대화 분석에는 Markdown 파일을 우선 사용합니다.
+
+## Baseline 단독 보고서 해석
+
+Baseline 단독 보고서에는 Candidate와 `delta_ms`가 없습니다. 다음 순서로 병목 후보를 찾습니다.
+
+1. Total GPU Frame의 Average/Min/Max와 측정 프레임 수를 확인합니다.
+2. `Top Optimization Starting Points` 또는 JSON의 `optimization_candidates`에서 평균 시간이 큰 Pass를 우선 확인합니다.
+3. `Range ms` 또는 `timing_range_ms`가 큰 Pass는 평균 비용과 별도로 Spike 가능성을 점검합니다.
+4. `Percent of Total GPU`는 우선순위 참고값으로만 사용합니다. GPU Pass는 중첩되거나 동시에 실행될 수 있으므로 비율을 합산하지 않습니다.
+5. CVar 상태와 비용이 큰 Pass를 연결하되, Candidate 검증 전에는 원인이 확정된 것처럼 표현하지 않습니다.
 
 ### JSON
 
@@ -125,10 +140,21 @@ Highlight는 검토 우선순위 기준일 뿐이며, 작은 변화가 항상 �
 schema_version
 report_type
 generated_at
-highlight_threshold_ms
 environment
 analysis_instructions
 baseline
+```
+
+Baseline 단독 JSON에는 다음 필드가 추가됩니다.
+
+```text
+optimization_candidates
+```
+
+Baseline/Candidate 비교 JSON에는 다음 필드가 추가됩니다.
+
+```text
+highlight_threshold_ms
 candidate
 changed_cvars
 gpu_comparison
@@ -160,7 +186,7 @@ change_percent
 exceeds_highlight_threshold
 ```
 
-## AI 권장 분석 순서
+## Baseline/Candidate 비교 분석 순서
 
 1. Total GPU Frame 평균 차이로 전체 성능 방향을 판단합니다.
 2. Total의 Min/Max 범위와 측정 프레임 수를 확인해 결과 안정성을 평가합니다.
@@ -186,7 +212,24 @@ AI의 답변은 다음 순서를 권장합니다.
 
 ## 권장 프롬프트
 
-아래 문장을 AI에 그대로 전달할 수 있습니다.
+Baseline 단독 보고서는 아래 문장을 AI에 그대로 전달할 수 있습니다.
+
+```text
+AI_REPORT_GUIDE.md의 Baseline 단독 보고서 해석 규칙을 먼저 읽어주세요.
+그다음 첨부한 GPUBaseline 보고서에서 GPU 비용을 줄일 우선순위를 분석해 주세요.
+
+다음을 포함해서 답변해 주세요.
+1. Total GPU Frame의 평균과 변동성
+2. 평균 GPU 시간이 큰 Pass
+3. Min/Max 범위가 커서 Spike가 의심되는 Pass
+4. 현재 CVar와 비용이 큰 Pass의 연관 가능성
+5. 효과가 클 것으로 예상되는 최적화 실험
+6. 각 추정을 검증하기 위한 Candidate 캡처 방법
+
+GPU Pass의 Percent of Total 값은 합산하지 말고, 확정된 원인과 추정을 구분해 주세요.
+```
+
+Baseline/Candidate 비교 보고서는 아래 문장을 사용할 수 있습니다.
 
 ```text
 AI_REPORT_GUIDE.md의 계산 규칙과 분석 순서를 먼저 읽어주세요.

@@ -1,3 +1,12 @@
+## 1.7.0
+- `Graphics CVar Control`에 표시 이름, 카테고리, 실제 CVar 명령어를 대상으로 하는 대소문자 무시 부분 검색 기능 추가
+- Lumen GI Screen Traces, Mesh SDF Tracing, Trace/Gather Resolution, Adaptive Probes와 Lumen Reflection Screen Traces, Mesh SDF Tracing, Max Roughness 세부 제어 8개 추가
+- `Rendering Debug Views` 창을 추가하고 Lit, Wireframe, Shader Complexity, Quad Overdraw, Light Complexity 및 Lumen 시각화 모드를 버튼으로 전환하도록 구성
+- Baseline만 캡처한 상태에서도 AI 분석용 Markdown/JSON 보고서를 생성하도록 확장
+- Baseline 단독 보고서에 GPU Pass별 평균/최소/최대, 변동 폭, Total GPU 대비 비율, 상위 최적화 후보와 전체 CVar 상태 포함
+- Baseline 단독 보고서는 `GPUBaseline_*`, Baseline/Candidate 비교 보고서는 기존 `GPUProfile_*` 파일명으로 구분
+- 생성 보고서가 SVN 상태 목록에 나타나지 않도록 `Reports` 관련 `svn:ignore` 속성 추가
+
 ## 1.6.0
 - 연속 GPU 기록에 `Auto Stop` 토글과 `Target Frames` 설정을 추가하여 목표 프레임 도달 시 Snapshot을 자동 확정
 - 수동 종료와 자동 종료 모드를 전환할 수 있도록 구성하고 자동 기록 진행률 및 현재/목표 프레임 표시
