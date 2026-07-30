@@ -1,3 +1,16 @@
+## 1.9.0
+- 연속 Baseline/Candidate 기록 중 Total GPU의 이동 중앙값과 프레임 예산을 기준으로 순간 부하를 감지하는 `Spike Tracking` 기능 추가
+- Frame Budget, Delta Threshold, Rolling Frames 설정과 스파이크 전 30프레임/후 60프레임 보존 기능 추가
+- Total GPU 그래프에 스파이크 Peak를 빨간 마커로 표시하고 사건별 상위 GPU Pass 변화량을 별도 영역에 표시
+- 연속된 스파이크를 하나의 사건으로 묶고 긴 사건에서도 Peak와 마지막 후속 프레임이 잘리지 않도록 전체 Total GPU 구간 저장
+- `Export Spike Log` 버튼으로 스파이크 사건 전용 `GPUSpikeLog_*.md/.json` 파일 생성
+- AI Report와 Spike Log에 동일 Snapshot을 식별하는 `Capture ID`와 Pass 표본 유효률 추가
+- 전체 GPU Pass Snapshot이 비거나 `Queue Total`이 없는 표본은 모든 Pass가 `0 ms`인 것으로 계산하지 않고 무효 처리
+- Total GPU Peak 기준 ±5프레임에서 가장 가까운 유효 Pass 표본을 연결하고 실제 사용 프레임과 정렬 오차 기록
+- 유효 Snapshot 내부에서 감지되지 않은 Pass는 `0 ms`로 계산하여 간헐적 Pass의 구간 평균을 실제 측정 프레임 기준으로 계산
+- 스파이크 Pass를 증가 항목 우선으로 정렬하고 반복 발생 횟수, 평균 증가량, 최대 증가량을 집계
+- 보고서 JSON Schema를 3으로 갱신하고 `stat gpu` Pass 값이 20프레임 히스토리 평균임을 신뢰도 정보와 함께 기록
+
 ## 1.8.0
 - CVar 현재 값 UI가 `FindConsoleVariable()`을 반복 호출하지 않도록 `IConsoleVariable*` 캐시를 추가하여 Console Manager 성능 경고 제거
 - PIE/Simulate 시작, Graphics CVar 변경, Preset Load 시 0초부터 시작하는 30초 안정화 타이머 추가

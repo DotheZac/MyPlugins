@@ -19,22 +19,36 @@ bool FGraphicsCVarProfiler::StartCapture(
 	const TMap<FString, FString>& CVarValues,
 	const int32 SampleFrames)
 {
-	return StartCaptureInternal(Target, CVarValues, SampleFrames, false);
+	FGraphicsCVarSpikeSettings DisabledSpikeSettings;
+	DisabledSpikeSettings.bEnabled = false;
+	return StartCaptureInternal(
+		Target,
+		CVarValues,
+		SampleFrames,
+		false,
+		DisabledSpikeSettings);
 }
 
 bool FGraphicsCVarProfiler::StartContinuousCapture(
 	const EGraphicsCVarCaptureTarget Target,
 	const TMap<FString, FString>& CVarValues,
-	const int32 TargetFrames)
+	const int32 TargetFrames,
+	const FGraphicsCVarSpikeSettings& SpikeSettings)
 {
-	return StartCaptureInternal(Target, CVarValues, TargetFrames, true);
+	return StartCaptureInternal(
+		Target,
+		CVarValues,
+		TargetFrames,
+		true,
+		SpikeSettings);
 }
 
 bool FGraphicsCVarProfiler::StartCaptureInternal(
 	const EGraphicsCVarCaptureTarget Target,
 	const TMap<FString, FString>& CVarValues,
 	const int32 SampleFrames,
-	const bool bContinuous)
+	const bool bContinuous,
+	const FGraphicsCVarSpikeSettings& SpikeSettings)
 {
 	if (bIsCapturing)
 	{
@@ -54,16 +68,52 @@ bool FGraphicsCVarProfiler::StartCaptureInternal(
 			? 600
 			: RequestedSampleFrames);
 	PassAccumulators.Reset();
+	RollingFrameSamples.Reset();
+	ActiveSpikeEventIndex = INDEX_NONE;
 	PendingSnapshot = {};
 	PendingSnapshot.Label = Target == EGraphicsCVarCaptureTarget::Baseline
 		? TEXT("Baseline")
 		: TEXT("Candidate");
+	const FDateTime CaptureStartedAt = FDateTime::Now();
+	PendingSnapshot.CaptureId = FString::Printf(
+		TEXT("%s_%s_%03d"),
+		*PendingSnapshot.Label,
+		*CaptureStartedAt.ToString(TEXT("%Y%m%d_%H%M%S")),
+		CaptureStartedAt.GetMillisecond());
 	PendingSnapshot.CaptureMode = !bContinuous
 		? TEXT("Fixed Frames")
 		: RequestedSampleFrames > 0
 			? TEXT("Auto Stop")
 			: TEXT("Manual Stop");
 	PendingSnapshot.CVarValues = CVarValues;
+	PendingSnapshot.PassStatHistoryFrames = bContinuous
+		? 20
+		: FMath::Clamp(RequestedSampleFrames, 20, 120);
+	PendingSnapshot.SpikeSettings = SpikeSettings;
+	PendingSnapshot.SpikeSettings.FrameBudgetMs = FMath::Clamp(
+		PendingSnapshot.SpikeSettings.FrameBudgetMs,
+		0.1,
+		1000.0);
+	PendingSnapshot.SpikeSettings.DeltaThresholdMs = FMath::Clamp(
+		PendingSnapshot.SpikeSettings.DeltaThresholdMs,
+		0.01,
+		1000.0);
+	PendingSnapshot.SpikeSettings.RollingWindowFrames = FMath::Clamp(
+		PendingSnapshot.SpikeSettings.RollingWindowFrames,
+		30,
+		600);
+	PendingSnapshot.SpikeSettings.PreFrames = FMath::Clamp(
+		PendingSnapshot.SpikeSettings.PreFrames,
+		0,
+		300);
+	PendingSnapshot.SpikeSettings.PostFrames = FMath::Clamp(
+		PendingSnapshot.SpikeSettings.PostFrames,
+		0,
+		600);
+	PendingSnapshot.SpikeSettings.MaxEvents = FMath::Clamp(
+		PendingSnapshot.SpikeSettings.MaxEvents,
+		1,
+		100);
 	PendingSnapshot.SampleFrames = RequestedSampleFrames;
 	PendingSnapshot.TargetFrames = RequestedSampleFrames;
 	LastStatus = FString::Printf(
@@ -71,7 +121,7 @@ bool FGraphicsCVarProfiler::StartCaptureInternal(
 		*PendingSnapshot.Label,
 		WarmupFrames);
 
-	SetGPUStatEnabledForCapture(bContinuous ? 1 : RequestedSampleFrames);
+	SetGPUStatEnabledForCapture(PendingSnapshot.PassStatHistoryFrames);
 	bIsCapturing = true;
 	TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateRaw(this, &FGraphicsCVarProfiler::Tick));
@@ -178,7 +228,21 @@ bool FGraphicsCVarProfiler::Tick(const float DeltaTime)
 	GPUFrameSamples.Add(GPUFrameMs);
 	if (bIsContinuousCapture)
 	{
-		AccumulateCurrentPassSamples();
+		TMap<FString, FGraphicsCVarPassSnapshot> CurrentPasses;
+		ReadGPUPassSnapshot(CurrentPasses);
+		++PendingSnapshot.PassSampleAttempts;
+		const bool bPassSnapshotValid =
+			IsGPUPassSnapshotValid(CurrentPasses);
+		if (bPassSnapshotValid)
+		{
+			++PendingSnapshot.ValidPassSamples;
+		}
+		else
+		{
+			CurrentPasses.Reset();
+		}
+		AccumulateCurrentPassSamples(CurrentPasses);
+		ProcessSpikeSample(GPUFrameMs, CurrentPasses);
 		if (RequestedSampleFrames > 0)
 		{
 			LastStatus = FString::Printf(
@@ -266,10 +330,14 @@ void FGraphicsCVarProfiler::FinishCapture()
 	const FGraphicsCVarSnapshot& Completed =
 		ActiveTarget == EGraphicsCVarCaptureTarget::Baseline ? Baseline : Candidate;
 	LastStatus = FString::Printf(
-		TEXT("%s captured: %.3f ms, %d GPU passes"),
+		TEXT("%s captured: %.3f ms, %d GPU passes, %.1f%% valid pass samples"),
 		*Completed.Label,
 		Completed.AverageGPUFrameMs,
-		Completed.Passes.Num());
+		Completed.Passes.Num(),
+		Completed.PassSampleAttempts > 0
+			? static_cast<double>(Completed.ValidPassSamples) /
+				static_cast<double>(Completed.PassSampleAttempts) * 100.0
+			: 0.0);
 
 	RestoreGPUStatState();
 	bIsCapturing = false;
@@ -277,11 +345,9 @@ void FGraphicsCVarProfiler::FinishCapture()
 	++ResultRevision;
 }
 
-void FGraphicsCVarProfiler::AccumulateCurrentPassSamples()
+void FGraphicsCVarProfiler::AccumulateCurrentPassSamples(
+	const TMap<FString, FGraphicsCVarPassSnapshot>& CurrentPasses)
 {
-	TMap<FString, FGraphicsCVarPassSnapshot> CurrentPasses;
-	ReadGPUPassSnapshot(CurrentPasses);
-
 	for (const TPair<FString, FGraphicsCVarPassSnapshot>& Pair : CurrentPasses)
 	{
 		const FGraphicsCVarPassSnapshot& Current = Pair.Value;
@@ -292,6 +358,285 @@ void FGraphicsCVarProfiler::AccumulateCurrentPassSamples()
 		Accumulator.MinMs = FMath::Min(Accumulator.MinMs, Current.AverageMs);
 		Accumulator.MaxMs = FMath::Max(Accumulator.MaxMs, Current.AverageMs);
 		++Accumulator.SampleCount;
+	}
+}
+
+void FGraphicsCVarProfiler::ProcessSpikeSample(
+	const double GPUFrameMs,
+	const TMap<FString, FGraphicsCVarPassSnapshot>& CurrentPasses)
+{
+	const FGraphicsCVarSpikeSettings& Settings = PendingSnapshot.SpikeSettings;
+	if (!Settings.bEnabled)
+	{
+		return;
+	}
+
+	FGraphicsCVarFramePassSample CurrentFrame;
+	CurrentFrame.FrameIndex = GPUFrameSamples.Num() - 1;
+	CurrentFrame.TotalGPUFrameMs = GPUFrameMs;
+	CurrentFrame.bPassDataValid = !CurrentPasses.IsEmpty();
+	CurrentFrame.Passes = CurrentPasses;
+
+	const bool bHasRollingBaseline =
+		RollingFrameSamples.Num() >= Settings.RollingWindowFrames;
+	const double RollingMedianMs =
+		bHasRollingBaseline ? CalculateRollingMedian() : 0.0;
+	const bool bIsSpike =
+		bHasRollingBaseline &&
+		GPUFrameMs >= Settings.FrameBudgetMs &&
+		GPUFrameMs >= RollingMedianMs + Settings.DeltaThresholdMs;
+
+	if (CurrentFrame.bPassDataValid)
+	{
+		for (FGraphicsCVarSpikeEvent& Event : PendingSnapshot.SpikeEvents)
+		{
+			TryAlignSpikePassSample(Event, CurrentFrame);
+		}
+	}
+
+	if (ActiveSpikeEventIndex != INDEX_NONE &&
+		PendingSnapshot.SpikeEvents.IsValidIndex(ActiveSpikeEventIndex))
+	{
+		FGraphicsCVarSpikeEvent& ActiveEvent =
+			PendingSnapshot.SpikeEvents[ActiveSpikeEventIndex];
+		AppendTotalOnlyFrameSample(ActiveEvent, CurrentFrame);
+		ActiveEvent.WindowEndFrame = CurrentFrame.FrameIndex;
+
+		if (bIsSpike)
+		{
+			ActiveEvent.LastSpikeFrame = CurrentFrame.FrameIndex;
+			if (GPUFrameMs > ActiveEvent.PeakTotalMs)
+			{
+				UpdateSpikePeak(ActiveEvent, CurrentFrame, RollingMedianMs);
+			}
+		}
+		else if (
+			CurrentFrame.FrameIndex - ActiveEvent.LastSpikeFrame >=
+			Settings.PostFrames)
+		{
+			ActiveSpikeEventIndex = INDEX_NONE;
+		}
+	}
+	else if (
+		bIsSpike &&
+		PendingSnapshot.SpikeEvents.Num() < Settings.MaxEvents)
+	{
+		FGraphicsCVarSpikeEvent NewEvent;
+		NewEvent.EventIndex = PendingSnapshot.SpikeEvents.Num() + 1;
+		NewEvent.StartFrame = CurrentFrame.FrameIndex;
+		NewEvent.LastSpikeFrame = CurrentFrame.FrameIndex;
+		NewEvent.WindowStartFrame = FMath::Max(
+			0,
+			CurrentFrame.FrameIndex - Settings.PreFrames);
+
+		const int32 FirstPreFrame = FMath::Max(
+			0,
+			RollingFrameSamples.Num() - Settings.PreFrames);
+		for (int32 Index = FirstPreFrame; Index < RollingFrameSamples.Num(); ++Index)
+		{
+			AppendTotalOnlyFrameSample(NewEvent, RollingFrameSamples[Index]);
+		}
+		AppendTotalOnlyFrameSample(NewEvent, CurrentFrame);
+		NewEvent.WindowEndFrame = CurrentFrame.FrameIndex;
+		UpdateSpikePeak(NewEvent, CurrentFrame, RollingMedianMs);
+
+		ActiveSpikeEventIndex = PendingSnapshot.SpikeEvents.Add(MoveTemp(NewEvent));
+	}
+
+	RollingFrameSamples.Add(MoveTemp(CurrentFrame));
+	const int32 HistoryLimit = FMath::Max(
+		Settings.RollingWindowFrames,
+		Settings.PreFrames);
+	if (RollingFrameSamples.Num() > HistoryLimit)
+	{
+		RollingFrameSamples.RemoveAt(
+			0,
+			RollingFrameSamples.Num() - HistoryLimit,
+			EAllowShrinking::No);
+	}
+}
+
+void FGraphicsCVarProfiler::UpdateSpikePeak(
+	FGraphicsCVarSpikeEvent& Event,
+	const FGraphicsCVarFramePassSample& CurrentFrame,
+	const double RollingMedianMs)
+{
+	Event.PeakFrame = CurrentFrame.FrameIndex;
+	Event.PeakTotalMs = CurrentFrame.TotalGPUFrameMs;
+	Event.BaselineTotalMs = RollingMedianMs;
+	Event.DeltaTotalMs = Event.PeakTotalMs - Event.BaselineTotalMs;
+	Event.bHasAlignedPassSample = false;
+	Event.PassSampleFrame = INDEX_NONE;
+	Event.PassFrameOffset = 0;
+	Event.PassDeltas.Reset();
+
+	TryAlignSpikePassSample(Event, CurrentFrame);
+	for (int32 Index = RollingFrameSamples.Num() - 1;
+		Index >= 0 && !Event.bHasAlignedPassSample;
+		--Index)
+	{
+		TryAlignSpikePassSample(Event, RollingFrameSamples[Index]);
+	}
+}
+
+void FGraphicsCVarProfiler::TryAlignSpikePassSample(
+	FGraphicsCVarSpikeEvent& Event,
+	const FGraphicsCVarFramePassSample& CandidateFrame)
+{
+	if (!CandidateFrame.bPassDataValid || Event.PeakFrame < 0)
+	{
+		return;
+	}
+
+	const int32 Offset = CandidateFrame.FrameIndex - Event.PeakFrame;
+	if (FMath::Abs(Offset) > SpikePassAlignmentFrames)
+	{
+		return;
+	}
+	if (Event.bHasAlignedPassSample &&
+		FMath::Abs(Event.PassFrameOffset) <= FMath::Abs(Offset))
+	{
+		return;
+	}
+
+	Event.bHasAlignedPassSample = true;
+	Event.PassSampleFrame = CandidateFrame.FrameIndex;
+	Event.PassFrameOffset = Offset;
+	BuildSpikePassDeltas(Event, CandidateFrame);
+}
+
+void FGraphicsCVarProfiler::BuildSpikePassDeltas(
+	FGraphicsCVarSpikeEvent& Event,
+	const FGraphicsCVarFramePassSample& PassFrame)
+{
+	TMap<FString, FGraphicsCVarPassSnapshot> RollingAverages;
+	int32 ValidRollingFrames = 0;
+	BuildRollingPassAverages(RollingAverages, ValidRollingFrames);
+	if (ValidRollingFrames <= 0)
+	{
+		Event.PassDeltas.Reset();
+		return;
+	}
+
+	TSet<FString> PassIds;
+	for (const TPair<FString, FGraphicsCVarPassSnapshot>& Pair : RollingAverages)
+	{
+		PassIds.Add(Pair.Key);
+	}
+	for (const TPair<FString, FGraphicsCVarPassSnapshot>& Pair : PassFrame.Passes)
+	{
+		PassIds.Add(Pair.Key);
+	}
+
+	Event.PassDeltas.Reset();
+	Event.PassDeltas.Reserve(PassIds.Num());
+	for (const FString& PassId : PassIds)
+	{
+		const FGraphicsCVarPassSnapshot* BaselinePass = RollingAverages.Find(PassId);
+		const FGraphicsCVarPassSnapshot* PeakPass = PassFrame.Passes.Find(PassId);
+
+		FGraphicsCVarSpikePassDelta Delta;
+		Delta.Id = PassId;
+		Delta.DisplayName = PeakPass
+			? PeakPass->DisplayName
+			: BaselinePass->DisplayName;
+		Delta.BaselineMs = BaselinePass ? BaselinePass->AverageMs : 0.0;
+		Delta.PeakMs = PeakPass ? PeakPass->AverageMs : 0.0;
+		Delta.DeltaMs = Delta.PeakMs - Delta.BaselineMs;
+		if (!FMath::IsNearlyZero(Delta.BaselineMs))
+		{
+			Delta.ChangePercent = Delta.DeltaMs / Delta.BaselineMs * 100.0;
+		}
+		Event.PassDeltas.Add(MoveTemp(Delta));
+	}
+
+	Event.PassDeltas.Sort([](
+		const FGraphicsCVarSpikePassDelta& A,
+		const FGraphicsCVarSpikePassDelta& B)
+	{
+		const int32 ARank =
+			A.DeltaMs > 0.001 ? 0 : A.DeltaMs < -0.001 ? 2 : 1;
+		const int32 BRank =
+			B.DeltaMs > 0.001 ? 0 : B.DeltaMs < -0.001 ? 2 : 1;
+		return ARank != BRank
+			? ARank < BRank
+			: FMath::Abs(A.DeltaMs) > FMath::Abs(B.DeltaMs);
+	});
+}
+
+void FGraphicsCVarProfiler::AppendTotalOnlyFrameSample(
+	FGraphicsCVarSpikeEvent& Event,
+	const FGraphicsCVarFramePassSample& Frame)
+{
+	FGraphicsCVarFramePassSample TotalOnlyFrame;
+	TotalOnlyFrame.FrameIndex = Frame.FrameIndex;
+	TotalOnlyFrame.TotalGPUFrameMs = Frame.TotalGPUFrameMs;
+	TotalOnlyFrame.bPassDataValid = Frame.bPassDataValid;
+	Event.FrameSamples.Add(MoveTemp(TotalOnlyFrame));
+}
+
+double FGraphicsCVarProfiler::CalculateRollingMedian() const
+{
+	TArray<double> Values;
+	Values.Reserve(RollingFrameSamples.Num());
+	for (const FGraphicsCVarFramePassSample& Frame : RollingFrameSamples)
+	{
+		Values.Add(Frame.TotalGPUFrameMs);
+	}
+	Values.Sort();
+	if (Values.IsEmpty())
+	{
+		return 0.0;
+	}
+
+	const int32 Middle = Values.Num() / 2;
+	return Values.Num() % 2 == 0
+		? (Values[Middle - 1] + Values[Middle]) * 0.5
+		: Values[Middle];
+}
+
+void FGraphicsCVarProfiler::BuildRollingPassAverages(
+	TMap<FString, FGraphicsCVarPassSnapshot>& OutAverages,
+	int32& OutValidFrameCount) const
+{
+	OutAverages.Reset();
+	OutValidFrameCount = 0;
+	if (RollingFrameSamples.IsEmpty())
+	{
+		return;
+	}
+
+	TMap<FString, double> Sums;
+	TMap<FString, FString> DisplayNames;
+	for (const FGraphicsCVarFramePassSample& Frame : RollingFrameSamples)
+	{
+		if (!Frame.bPassDataValid)
+		{
+			continue;
+		}
+		++OutValidFrameCount;
+		for (const TPair<FString, FGraphicsCVarPassSnapshot>& Pair : Frame.Passes)
+		{
+			Sums.FindOrAdd(Pair.Key) += Pair.Value.AverageMs;
+			DisplayNames.FindOrAdd(Pair.Key) = Pair.Value.DisplayName;
+		}
+	}
+
+	if (OutValidFrameCount <= 0)
+	{
+		return;
+	}
+
+	for (const TPair<FString, double>& Pair : Sums)
+	{
+		FGraphicsCVarPassSnapshot Average;
+		Average.Id = Pair.Key;
+		Average.DisplayName = DisplayNames.FindRef(Pair.Key);
+		Average.AverageMs =
+			Pair.Value / static_cast<double>(OutValidFrameCount);
+		Average.MinMs = Average.AverageMs;
+		Average.MaxMs = Average.AverageMs;
+		OutAverages.Add(Pair.Key, MoveTemp(Average));
 	}
 }
 
@@ -310,8 +655,14 @@ void FGraphicsCVarProfiler::BuildAccumulatedPassSnapshots(
 		FGraphicsCVarPassSnapshot Pass;
 		Pass.Id = Accumulator.Id;
 		Pass.DisplayName = Accumulator.DisplayName;
-		Pass.AverageMs = Accumulator.SumMs / static_cast<double>(Accumulator.SampleCount);
-		Pass.MinMs = Accumulator.MinMs;
+		const int32 ValidFrameCount = FMath::Max(
+			Accumulator.SampleCount,
+			PendingSnapshot.ValidPassSamples);
+		Pass.AverageMs =
+			Accumulator.SumMs / static_cast<double>(ValidFrameCount);
+		Pass.MinMs = Accumulator.SampleCount < ValidFrameCount
+			? 0.0
+			: Accumulator.MinMs;
 		Pass.MaxMs = Accumulator.MaxMs;
 		OutPasses.Add(Pair.Key, MoveTemp(Pass));
 	}
@@ -427,6 +778,19 @@ void FGraphicsCVarProfiler::ReadGPUPassSnapshot(
 		}
 	}
 #endif
+}
+
+bool FGraphicsCVarProfiler::IsGPUPassSnapshotValid(
+	const TMap<FString, FGraphicsCVarPassSnapshot>& Passes)
+{
+	for (const TPair<FString, FGraphicsCVarPassSnapshot>& Pair : Passes)
+	{
+		if (Pair.Value.DisplayName.StartsWith(TEXT("Queue Total")))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 TArray<FGraphicsCVarPassComparison> FGraphicsCVarProfiler::BuildComparison() const

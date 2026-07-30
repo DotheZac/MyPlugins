@@ -18,4 +18,6 @@ public:
 	static FGraphicsCVarReportExportResult ExportReport(
 		const FGraphicsCVarProfiler& Profiler,
 		double HighlightThresholdMs);
+	static FGraphicsCVarReportExportResult ExportSpikeLog(
+		const FGraphicsCVarProfiler& Profiler);
 };

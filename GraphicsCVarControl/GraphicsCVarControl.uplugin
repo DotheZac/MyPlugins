@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 9,
-	"VersionName": "1.8.0",
+	"Version": 10,
+	"VersionName": "1.9.0",
 	"FriendlyName": "Graphics CVar Control",
-	"Description": "Editor tools for searching and controlling graphics CVars, opening rendering debug views, recording GPU snapshots, and exporting AI-ready performance reports.",
+	"Description": "Editor tools for graphics CVar control, rendering debug views, GPU snapshot comparison, spike tracking, and AI-ready performance reports.",
 	"Category": "Rendering",
 	"CreatedBy": "DotheZac",
 	"CreatedByURL": "",

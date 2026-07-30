@@ -2,13 +2,14 @@
 
 ## 목적
 
-이 문서는 `Graphics CVar Control` 플러그인이 내보낸 GPU Baseline 단독 분석 보고서와 Baseline/Candidate 비교 보고서를 AI가 일관된 기준으로 해석하기 위한 가이드입니다.
+이 문서는 `Graphics CVar Control` 플러그인이 내보낸 GPU Baseline 단독 분석 보고서, Baseline/Candidate 비교 보고서와 Spike Log를 AI가 일관된 기준으로 해석하기 위한 가이드입니다.
 
 AI에게 다음 파일을 함께 제공하는 방식을 권장합니다.
 
 1. 이 `AI_REPORT_GUIDE.md`
 2. 측정 후 생성된 `GPUBaseline_*.md` 또는 `GPUProfile_*.md`
-3. 세부 데이터나 자동 처리가 필요하면 같은 이름의 `.json`
+3. 동일한 Capture ID의 `GPUSpikeLog_*.md`
+4. 세부 데이터나 자동 처리가 필요하면 각 보고서의 `.json`
 
 내보낸 Markdown 보고서에도 핵심 분석 지침이 포함되어 있으므로 해당 파일만 전달해도 기본 분석은 가능합니다.
 
@@ -20,8 +21,12 @@ AI에게 다음 파일을 함께 제공하는 방식을 권장합니다.
 - `GPUProfile_YYYYMMDD_HHMMSS_MMM.json`
 - `GPUBaseline_YYYYMMDD_HHMMSS_MMM.md`
 - `GPUBaseline_YYYYMMDD_HHMMSS_MMM.json`
+- `GPUSpikeLog_YYYYMMDD_HHMMSS_MMM.md`
+- `GPUSpikeLog_YYYYMMDD_HHMMSS_MMM.json`
 
 Candidate가 있으면 `GPUProfile_*`, Baseline만 있으면 `GPUBaseline_*` 보고서가 생성됩니다.
+
+`Export Spike Log`를 누르면 Baseline/Candidate에서 감지된 스파이크 사건만 `GPUSpikeLog_*`로 생성됩니다. AI Report와 Spike Log를 함께 전달할 때는 각 Snapshot의 `Capture ID`가 일치해야 합니다.
 
 현재 프로젝트의 기본 저장 경로는 다음과 같습니다.
 
@@ -44,8 +49,26 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 - 전체 GPU Pass 비교
 - 관리 대상 CVar 전체 상태
 - Baseline 단독 보고서의 상위 최적화 후보와 Pass별 변동 폭
+- 스파이크 사건별 Peak, Pass 정렬 정보와 반복 기여 Pass
 
 일반적인 AI 대화 분석에는 Markdown 파일을 우선 사용합니다.
+
+### Spike Log
+
+Spike Log는 전체 구간 평균과 별도로 순간적인 Total GPU 증가 원인을 조사합니다.
+
+- 스파이크 전후 Total GPU 프레임 범위
+- 이동 중앙값과 Peak의 절대 차이
+- Peak 기준 ±5프레임에서 연결한 가장 가까운 유효 GPU Pass 표본
+- GPU Pass별 이동 평균, Peak 표본과 증가량
+- 여러 사건에서 반복적으로 증가한 Pass의 발생 횟수, 평균 증가량과 최대 증가량
+- 전체 Pass 표본 시도 수, 유효 표본 수와 유효률
+
+전체 GPU Pass Snapshot이 비거나 `Queue Total`이 없으면 무효 표본입니다. 무효 표본을 모든 Pass가 `0 ms`가 된 것으로 해석하지 않습니다. `has_aligned_pass_sample`이 `false`인 사건은 Pass 원인을 추정하지 않습니다.
+
+Pass 표본은 `stat_history_frames = 20`인 HUD 히스토리 평균입니다. Total GPU의 정확한 Peak와 동일한 단일 프레임 측정값으로 간주하지 말고 `pass_frame_offset` 및 유효률과 함께 신뢰도를 판단합니다.
+
+`Aggregate Positive Spike Contributors`는 반복되는 원인 후보를 찾기 위한 표입니다. 등장 횟수가 많더라도 증가량이 매우 작을 수 있으므로 `Average Increase`와 `Maximum Increase`를 함께 확인합니다.
 
 ## Baseline 단독 보고서 해석
 
@@ -164,14 +187,51 @@ gpu_comparison
 각 Snapshot의 주요 필드는 다음과 같습니다.
 
 ```text
+capture_id
 label
 captured_at
 capture_mode
 sample_frames
 target_frames
+pass_sample_quality
 total_gpu_frame
+spike_tracking_settings
+spike_events
 gpu_passes
 cvars
+```
+
+Spike Log JSON의 `schema_version`은 `3`이며 Capture별 주요 필드는 다음과 같습니다.
+
+```text
+capture_id
+label
+captured_at
+capture_mode
+sample_frames
+pass_sample_quality
+settings
+events
+aggregate_positive_contributors
+```
+
+각 스파이크 사건에는 다음 필드가 포함됩니다.
+
+```text
+event_index
+start_frame
+peak_frame
+last_spike_frame
+window_start_frame
+window_end_frame
+has_aligned_pass_sample
+pass_sample_frame
+pass_frame_offset
+rolling_baseline_total_ms
+peak_total_ms
+delta_total_ms
+pass_deltas
+frame_samples
 ```
 
 각 비교 행의 주요 필드는 다음과 같습니다.
@@ -246,6 +306,24 @@ AI_REPORT_GUIDE.md의 계산 규칙과 분석 순서를 먼저 읽어주세요.
 7. 효과가 클 것으로 예상되는 최적화 항목의 우선순위
 
 단순한 상관관계를 확정된 원인으로 표현하지 말고, 각 추정의 신뢰도를 함께 표시해 주세요.
+```
+
+AI Report와 Spike Log를 함께 분석할 때는 아래 문장을 사용할 수 있습니다.
+
+```text
+AI_REPORT_GUIDE.md를 먼저 읽고 Capture ID가 같은 AI Report와 Spike Log를 함께 분석해 주세요.
+
+AI Report에서는 전체 구간의 평균 비용이 큰 GPU Pass를 찾고,
+Spike Log에서는 순간적으로 반복해서 증가한 Pass와 최대 증가량을 찾아 주세요.
+
+다음을 구분해서 답변해 주세요.
+1. 평상시 지속적으로 큰 비용
+2. 순간 스파이크에서만 증가하는 비용
+3. 두 보고서에서 공통으로 우선순위가 높은 Pass
+4. Pass 표본 유효률과 정렬 오차를 고려한 신뢰도
+5. 효과가 클 것으로 예상되는 최적화 및 검증 순서
+
+GPU Pass와 Queue 시간은 합산하지 말고, stat history 평균과 정확한 Total GPU Peak를 같은 단일 프레임 값으로 단정하지 마세요.
 ```
 
 ## 해석 시 주의사항

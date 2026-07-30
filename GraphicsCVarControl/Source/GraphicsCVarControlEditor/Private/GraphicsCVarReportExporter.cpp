@@ -14,7 +14,7 @@
 
 namespace
 {
-	constexpr int32 ReportSchemaVersion = 1;
+	constexpr int32 ReportSchemaVersion = 3;
 
 	FString EscapeMarkdownCell(FString Value)
 	{
@@ -75,20 +75,137 @@ namespace
 		return Timing;
 	}
 
+	TSharedRef<FJsonObject> MakeSpikeEventJson(
+		const FGraphicsCVarSpikeEvent& Event)
+	{
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetNumberField(TEXT("event_index"), Event.EventIndex);
+		Json->SetNumberField(TEXT("start_frame"), Event.StartFrame);
+		Json->SetNumberField(TEXT("peak_frame"), Event.PeakFrame);
+		Json->SetNumberField(TEXT("last_spike_frame"), Event.LastSpikeFrame);
+		Json->SetNumberField(TEXT("window_start_frame"), Event.WindowStartFrame);
+		Json->SetNumberField(TEXT("window_end_frame"), Event.WindowEndFrame);
+		Json->SetBoolField(
+			TEXT("has_aligned_pass_sample"),
+			Event.bHasAlignedPassSample);
+		if (Event.bHasAlignedPassSample)
+		{
+			Json->SetNumberField(TEXT("pass_sample_frame"), Event.PassSampleFrame);
+			Json->SetNumberField(TEXT("pass_frame_offset"), Event.PassFrameOffset);
+		}
+		else
+		{
+			Json->SetField(TEXT("pass_sample_frame"), MakeShared<FJsonValueNull>());
+			Json->SetField(TEXT("pass_frame_offset"), MakeShared<FJsonValueNull>());
+		}
+		Json->SetNumberField(TEXT("rolling_baseline_total_ms"), Event.BaselineTotalMs);
+		Json->SetNumberField(TEXT("peak_total_ms"), Event.PeakTotalMs);
+		Json->SetNumberField(TEXT("delta_total_ms"), Event.DeltaTotalMs);
+
+		TArray<TSharedPtr<FJsonValue>> PassDeltas;
+		PassDeltas.Reserve(Event.PassDeltas.Num());
+		for (const FGraphicsCVarSpikePassDelta& Delta : Event.PassDeltas)
+		{
+			TSharedRef<FJsonObject> DeltaJson = MakeShared<FJsonObject>();
+			DeltaJson->SetStringField(TEXT("id"), Delta.Id);
+			DeltaJson->SetStringField(TEXT("display_name"), Delta.DisplayName);
+			DeltaJson->SetNumberField(TEXT("rolling_average_ms"), Delta.BaselineMs);
+			DeltaJson->SetNumberField(TEXT("peak_ms"), Delta.PeakMs);
+			DeltaJson->SetNumberField(TEXT("delta_ms"), Delta.DeltaMs);
+			if (Delta.ChangePercent.IsSet())
+			{
+				DeltaJson->SetNumberField(
+					TEXT("change_percent"),
+					Delta.ChangePercent.GetValue());
+			}
+			else
+			{
+				DeltaJson->SetField(
+					TEXT("change_percent"),
+					MakeShared<FJsonValueNull>());
+			}
+			PassDeltas.Add(MakeShared<FJsonValueObject>(DeltaJson));
+		}
+		Json->SetArrayField(TEXT("pass_deltas"), MoveTemp(PassDeltas));
+
+		TArray<TSharedPtr<FJsonValue>> FrameSamples;
+		FrameSamples.Reserve(Event.FrameSamples.Num());
+		for (const FGraphicsCVarFramePassSample& Frame : Event.FrameSamples)
+		{
+			TSharedRef<FJsonObject> FrameJson = MakeShared<FJsonObject>();
+			FrameJson->SetNumberField(TEXT("frame"), Frame.FrameIndex);
+			FrameJson->SetNumberField(
+				TEXT("total_gpu_ms"),
+				Frame.TotalGPUFrameMs);
+			FrameJson->SetBoolField(
+				TEXT("pass_data_valid"),
+				Frame.bPassDataValid);
+			FrameSamples.Add(MakeShared<FJsonValueObject>(FrameJson));
+		}
+		Json->SetArrayField(TEXT("frame_samples"), MoveTemp(FrameSamples));
+		return Json;
+	}
+
 	TSharedRef<FJsonObject> MakeSnapshotJson(const FGraphicsCVarSnapshot& Snapshot)
 	{
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetStringField(TEXT("capture_id"), Snapshot.CaptureId);
 		Json->SetStringField(TEXT("label"), Snapshot.Label);
 		Json->SetStringField(TEXT("captured_at"), Snapshot.CapturedAt.ToIso8601());
 		Json->SetStringField(TEXT("capture_mode"), Snapshot.CaptureMode);
 		Json->SetNumberField(TEXT("sample_frames"), Snapshot.SampleFrames);
 		Json->SetNumberField(TEXT("target_frames"), Snapshot.TargetFrames);
+		TSharedRef<FJsonObject> PassSampleQuality = MakeShared<FJsonObject>();
+		PassSampleQuality->SetNumberField(
+			TEXT("attempts"),
+			Snapshot.PassSampleAttempts);
+		PassSampleQuality->SetNumberField(
+			TEXT("valid_samples"),
+			Snapshot.ValidPassSamples);
+		PassSampleQuality->SetNumberField(
+			TEXT("stat_history_frames"),
+			Snapshot.PassStatHistoryFrames);
+		PassSampleQuality->SetNumberField(
+			TEXT("valid_percent"),
+			Snapshot.PassSampleAttempts > 0
+				? static_cast<double>(Snapshot.ValidPassSamples) /
+					static_cast<double>(Snapshot.PassSampleAttempts) * 100.0
+				: 0.0);
+		Json->SetObjectField(TEXT("pass_sample_quality"), PassSampleQuality);
 		Json->SetObjectField(
 			TEXT("total_gpu_frame"),
 			MakeTimingJson(
 				Snapshot.AverageGPUFrameMs,
 				Snapshot.MinGPUFrameMs,
 				Snapshot.MaxGPUFrameMs));
+
+		TSharedRef<FJsonObject> SpikeSettings = MakeShared<FJsonObject>();
+		SpikeSettings->SetBoolField(TEXT("enabled"), Snapshot.SpikeSettings.bEnabled);
+		SpikeSettings->SetNumberField(
+			TEXT("frame_budget_ms"),
+			Snapshot.SpikeSettings.FrameBudgetMs);
+		SpikeSettings->SetNumberField(
+			TEXT("delta_threshold_ms"),
+			Snapshot.SpikeSettings.DeltaThresholdMs);
+		SpikeSettings->SetNumberField(
+			TEXT("rolling_window_frames"),
+			Snapshot.SpikeSettings.RollingWindowFrames);
+		SpikeSettings->SetNumberField(
+			TEXT("pre_frames"),
+			Snapshot.SpikeSettings.PreFrames);
+		SpikeSettings->SetNumberField(
+			TEXT("post_frames"),
+			Snapshot.SpikeSettings.PostFrames);
+		Json->SetObjectField(TEXT("spike_tracking_settings"), SpikeSettings);
+
+		TArray<TSharedPtr<FJsonValue>> SpikeEvents;
+		SpikeEvents.Reserve(Snapshot.SpikeEvents.Num());
+		for (const FGraphicsCVarSpikeEvent& Event : Snapshot.SpikeEvents)
+		{
+			SpikeEvents.Add(MakeShared<FJsonValueObject>(
+				MakeSpikeEventJson(Event)));
+		}
+		Json->SetArrayField(TEXT("spike_events"), MoveTemp(SpikeEvents));
 
 		TArray<FString> PassIds;
 		Snapshot.Passes.GetKeys(PassIds);
@@ -145,16 +262,327 @@ namespace
 			: 0.0;
 	}
 
+	struct FSpikePassAggregate
+	{
+		FString Id;
+		FString DisplayName;
+		int32 EventCount = 0;
+		double SumDeltaMs = 0.0;
+		double MaxDeltaMs = 0.0;
+	};
+
+	TArray<FSpikePassAggregate> BuildSpikePassAggregates(
+		const FGraphicsCVarSnapshot& Snapshot)
+	{
+		TMap<FString, FSpikePassAggregate> ByPass;
+		for (const FGraphicsCVarSpikeEvent& Event : Snapshot.SpikeEvents)
+		{
+			if (!Event.bHasAlignedPassSample)
+			{
+				continue;
+			}
+			for (const FGraphicsCVarSpikePassDelta& Delta : Event.PassDeltas)
+			{
+				if (Delta.DeltaMs <= 0.001)
+				{
+					continue;
+				}
+				FSpikePassAggregate& Aggregate = ByPass.FindOrAdd(Delta.Id);
+				Aggregate.Id = Delta.Id;
+				Aggregate.DisplayName = Delta.DisplayName;
+				++Aggregate.EventCount;
+				Aggregate.SumDeltaMs += Delta.DeltaMs;
+				Aggregate.MaxDeltaMs = FMath::Max(
+					Aggregate.MaxDeltaMs,
+					Delta.DeltaMs);
+			}
+		}
+
+		TArray<FSpikePassAggregate> Result;
+		ByPass.GenerateValueArray(Result);
+		Result.Sort([](
+			const FSpikePassAggregate& A,
+			const FSpikePassAggregate& B)
+		{
+			return A.EventCount != B.EventCount
+				? A.EventCount > B.EventCount
+				: A.MaxDeltaMs > B.MaxDeltaMs;
+		});
+		return Result;
+	}
+
+	void AppendSpikeMarkdown(
+		FString& Report,
+		const FGraphicsCVarSnapshot& Snapshot,
+		const FString& Heading)
+	{
+		Report += FString::Printf(TEXT("\n## %s Spike Events\n\n"), *Heading);
+		Report += FString::Printf(
+			TEXT("- Capture ID: `%s`\n- Tracking: `%s`\n"
+				"- Pass sample validity: `%d / %d (%.1f%%)`\n"
+				"- Pass stat history: `%d frames` per sample\n"
+				"- Frame budget: `%.3f ms`\n"
+				"- Delta threshold: `%.3f ms`\n- Rolling window: `%d frames`\n"
+				"- Preserved window: `%d pre / %d post frames`\n\n"),
+			*Snapshot.CaptureId,
+			Snapshot.SpikeSettings.bEnabled ? TEXT("Enabled") : TEXT("Disabled"),
+			Snapshot.ValidPassSamples,
+			Snapshot.PassSampleAttempts,
+			Snapshot.PassSampleAttempts > 0
+				? static_cast<double>(Snapshot.ValidPassSamples) /
+					static_cast<double>(Snapshot.PassSampleAttempts) * 100.0
+				: 0.0,
+			Snapshot.PassStatHistoryFrames,
+			Snapshot.SpikeSettings.FrameBudgetMs,
+			Snapshot.SpikeSettings.DeltaThresholdMs,
+			Snapshot.SpikeSettings.RollingWindowFrames,
+			Snapshot.SpikeSettings.PreFrames,
+			Snapshot.SpikeSettings.PostFrames);
+
+		if (Snapshot.SpikeEvents.IsEmpty())
+		{
+			Report += TEXT("No spike events were detected.\n");
+			return;
+		}
+
+		for (const FGraphicsCVarSpikeEvent& Event : Snapshot.SpikeEvents)
+		{
+			Report += FString::Printf(
+				TEXT("\n### Spike #%d\n\n"
+					"- Peak frame: `%d`\n- Spike range: `%d - %d`\n"
+					"- Stored window: `%d - %d`\n"
+					"- Rolling baseline: `%.3f ms`\n- Peak Total GPU: `%.3f ms`\n"
+					"- Total delta: `%+.3f ms`\n"
+					"- Pass alignment: `%s`\n\n"),
+				Event.EventIndex,
+				Event.PeakFrame,
+				Event.StartFrame,
+				Event.LastSpikeFrame,
+				Event.WindowStartFrame,
+				Event.WindowEndFrame,
+				Event.BaselineTotalMs,
+				Event.PeakTotalMs,
+				Event.DeltaTotalMs,
+				Event.bHasAlignedPassSample
+					? *FString::Printf(
+						TEXT("Frame %d (%+d from peak)"),
+						Event.PassSampleFrame,
+						Event.PassFrameOffset)
+					: TEXT("Unavailable - no valid Pass sample within +/-5 frames"));
+			if (!Event.bHasAlignedPassSample)
+			{
+				Report += TEXT(
+					"Pass attribution for this event is unavailable and must not be inferred.\n\n");
+				continue;
+			}
+			Report += TEXT("| Rank | GPU Pass | Rolling Avg | Peak | Delta | Change |\n");
+			Report += TEXT("|---:|---|---:|---:|---:|---:|\n");
+			const int32 PassCount = FMath::Min(15, Event.PassDeltas.Num());
+			for (int32 Index = 0; Index < PassCount; ++Index)
+			{
+				const FGraphicsCVarSpikePassDelta& Delta = Event.PassDeltas[Index];
+				Report += FString::Printf(
+					TEXT("| %d | %s | %.3f | %.3f | %+.3f | %s |\n"),
+					Index + 1,
+					*EscapeMarkdownCell(Delta.DisplayName),
+					Delta.BaselineMs,
+					Delta.PeakMs,
+					Delta.DeltaMs,
+					*FormatPercentage(Delta.ChangePercent));
+			}
+		}
+
+		const TArray<FSpikePassAggregate> Aggregates =
+			BuildSpikePassAggregates(Snapshot);
+		Report += TEXT("\n### Aggregate Positive Spike Contributors\n\n");
+		Report += TEXT("| Rank | GPU Pass | Events | Average Increase | Maximum Increase |\n");
+		Report += TEXT("|---:|---|---:|---:|---:|\n");
+		const int32 AggregateCount = FMath::Min(20, Aggregates.Num());
+		for (int32 Index = 0; Index < AggregateCount; ++Index)
+		{
+			const FSpikePassAggregate& Aggregate = Aggregates[Index];
+			Report += FString::Printf(
+				TEXT("| %d | %s | %d | %+.3f ms | %+.3f ms |\n"),
+				Index + 1,
+				*EscapeMarkdownCell(Aggregate.DisplayName),
+				Aggregate.EventCount,
+				Aggregate.SumDeltaMs /
+					static_cast<double>(Aggregate.EventCount),
+				Aggregate.MaxDeltaMs);
+		}
+		if (AggregateCount == 0)
+		{
+			Report += TEXT("| - | No aligned positive Pass deltas | 0 | 0 | 0 |\n");
+		}
+	}
+
+	FString BuildSpikeLogMarkdown(
+		const FGraphicsCVarSnapshot& Baseline,
+		const FGraphicsCVarSnapshot& Candidate)
+	{
+		FString Report;
+		Report += TEXT("# Unreal Engine GPU Spike Log\n\n");
+		Report += FString::Printf(
+			TEXT("- Generated: `%s`\n- Project: `%s`\n- Engine: `%s`\n"
+				"- Platform: `%hs`\n\n"),
+			*FDateTime::Now().ToIso8601(),
+			FApp::GetProjectName(),
+			*FEngineVersion::Current().ToString(),
+			FPlatformProperties::PlatformName());
+		Report += TEXT("## Instructions for AI Analysis\n\n");
+		Report += TEXT("- Identify the passes that increased most at each spike peak.\n");
+		Report += TEXT("- Use the preserved pre/post frame samples to distinguish one-frame spikes from sustained load.\n");
+		Report += TEXT("- GPU passes can overlap or be nested; do not add pass timings together.\n");
+		Report += TEXT("- Pass timings are stat-history averages aligned near the Total GPU peak, not exact single-frame timestamps.\n");
+		Report += TEXT("- A pass missing from a rolling frame is treated as `0 ms` when its rolling average is calculated.\n");
+		Report += TEXT("- Treat pass correlation as a clue, not proof of the responsible Actor or effect.\n\n");
+
+		if (Baseline.bIsValid)
+		{
+			AppendSpikeMarkdown(Report, Baseline, TEXT("Baseline"));
+		}
+		if (Candidate.bIsValid)
+		{
+			AppendSpikeMarkdown(Report, Candidate, TEXT("Candidate"));
+		}
+		return Report;
+	}
+
+	TSharedRef<FJsonObject> MakeSpikeCaptureJson(
+		const FGraphicsCVarSnapshot& Snapshot)
+	{
+		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+		Json->SetStringField(TEXT("capture_id"), Snapshot.CaptureId);
+		Json->SetStringField(TEXT("label"), Snapshot.Label);
+		Json->SetStringField(TEXT("captured_at"), Snapshot.CapturedAt.ToIso8601());
+		Json->SetStringField(TEXT("capture_mode"), Snapshot.CaptureMode);
+		Json->SetNumberField(TEXT("sample_frames"), Snapshot.SampleFrames);
+		TSharedRef<FJsonObject> PassSampleQuality = MakeShared<FJsonObject>();
+		PassSampleQuality->SetNumberField(
+			TEXT("attempts"),
+			Snapshot.PassSampleAttempts);
+		PassSampleQuality->SetNumberField(
+			TEXT("valid_samples"),
+			Snapshot.ValidPassSamples);
+		PassSampleQuality->SetNumberField(
+			TEXT("stat_history_frames"),
+			Snapshot.PassStatHistoryFrames);
+		PassSampleQuality->SetNumberField(
+			TEXT("valid_percent"),
+			Snapshot.PassSampleAttempts > 0
+				? static_cast<double>(Snapshot.ValidPassSamples) /
+					static_cast<double>(Snapshot.PassSampleAttempts) * 100.0
+				: 0.0);
+		Json->SetObjectField(TEXT("pass_sample_quality"), PassSampleQuality);
+
+		TSharedRef<FJsonObject> Settings = MakeShared<FJsonObject>();
+		Settings->SetBoolField(TEXT("enabled"), Snapshot.SpikeSettings.bEnabled);
+		Settings->SetNumberField(
+			TEXT("frame_budget_ms"),
+			Snapshot.SpikeSettings.FrameBudgetMs);
+		Settings->SetNumberField(
+			TEXT("delta_threshold_ms"),
+			Snapshot.SpikeSettings.DeltaThresholdMs);
+		Settings->SetNumberField(
+			TEXT("rolling_window_frames"),
+			Snapshot.SpikeSettings.RollingWindowFrames);
+		Settings->SetNumberField(TEXT("pre_frames"), Snapshot.SpikeSettings.PreFrames);
+		Settings->SetNumberField(TEXT("post_frames"), Snapshot.SpikeSettings.PostFrames);
+		Json->SetObjectField(TEXT("settings"), Settings);
+
+		TArray<TSharedPtr<FJsonValue>> Events;
+		Events.Reserve(Snapshot.SpikeEvents.Num());
+		for (const FGraphicsCVarSpikeEvent& Event : Snapshot.SpikeEvents)
+		{
+			Events.Add(MakeShared<FJsonValueObject>(MakeSpikeEventJson(Event)));
+		}
+		Json->SetArrayField(TEXT("events"), MoveTemp(Events));
+
+		const TArray<FSpikePassAggregate> Aggregates =
+			BuildSpikePassAggregates(Snapshot);
+		TArray<TSharedPtr<FJsonValue>> AggregateJsonValues;
+		AggregateJsonValues.Reserve(Aggregates.Num());
+		for (const FSpikePassAggregate& Aggregate : Aggregates)
+		{
+			TSharedRef<FJsonObject> AggregateJson = MakeShared<FJsonObject>();
+			AggregateJson->SetStringField(TEXT("id"), Aggregate.Id);
+			AggregateJson->SetStringField(
+				TEXT("display_name"),
+				Aggregate.DisplayName);
+			AggregateJson->SetNumberField(
+				TEXT("event_count"),
+				Aggregate.EventCount);
+			AggregateJson->SetNumberField(
+				TEXT("average_delta_ms"),
+				Aggregate.SumDeltaMs /
+					static_cast<double>(Aggregate.EventCount));
+			AggregateJson->SetNumberField(
+				TEXT("max_delta_ms"),
+				Aggregate.MaxDeltaMs);
+			AggregateJsonValues.Add(
+				MakeShared<FJsonValueObject>(AggregateJson));
+		}
+		Json->SetArrayField(
+			TEXT("aggregate_positive_contributors"),
+			MoveTemp(AggregateJsonValues));
+		return Json;
+	}
+
+	FString BuildSpikeLogJson(
+		const FGraphicsCVarSnapshot& Baseline,
+		const FGraphicsCVarSnapshot& Candidate)
+	{
+		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetNumberField(TEXT("schema_version"), ReportSchemaVersion);
+		Root->SetStringField(TEXT("report_type"), TEXT("unreal_engine_gpu_spike_log"));
+		Root->SetStringField(TEXT("generated_at"), FDateTime::Now().ToIso8601());
+
+		TSharedRef<FJsonObject> Environment = MakeShared<FJsonObject>();
+		Environment->SetStringField(TEXT("project"), FApp::GetProjectName());
+		Environment->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+		Environment->SetStringField(TEXT("platform"), FPlatformProperties::PlatformName());
+		Root->SetObjectField(TEXT("environment"), Environment);
+
+		TArray<TSharedPtr<FJsonValue>> Captures;
+		if (Baseline.bIsValid)
+		{
+			Captures.Add(MakeShared<FJsonValueObject>(
+				MakeSpikeCaptureJson(Baseline)));
+		}
+		if (Candidate.bIsValid)
+		{
+			Captures.Add(MakeShared<FJsonValueObject>(
+				MakeSpikeCaptureJson(Candidate)));
+		}
+		Root->SetArrayField(TEXT("captures"), MoveTemp(Captures));
+
+		FString JsonText;
+		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonText);
+		FJsonSerializer::Serialize(Root, Writer);
+		return JsonText;
+	}
+
 	FString BuildBaselineMarkdownReport(const FGraphicsCVarSnapshot& Baseline)
 	{
 		FString Report;
 		Report += TEXT("# Unreal Engine GPU Baseline Analysis Report\n\n");
 		Report += FString::Printf(
-			TEXT("- Generated: `%s`\n- Project: `%s`\n- Engine: `%s`\n- Platform: `%hs`\n\n"),
+			TEXT("- Generated: `%s`\n- Project: `%s`\n- Engine: `%s`\n"
+				"- Platform: `%hs`\n- Capture ID: `%s`\n"
+				"- Pass sample validity: `%d / %d (%.1f%%)`\n"
+				"- Pass stat history: `%d frames` per sample\n\n"),
 			*FDateTime::Now().ToIso8601(),
 			FApp::GetProjectName(),
 			*FEngineVersion::Current().ToString(),
-			FPlatformProperties::PlatformName());
+			FPlatformProperties::PlatformName(),
+			*Baseline.CaptureId,
+			Baseline.ValidPassSamples,
+			Baseline.PassSampleAttempts,
+			Baseline.PassSampleAttempts > 0
+				? static_cast<double>(Baseline.ValidPassSamples) /
+					static_cast<double>(Baseline.PassSampleAttempts) * 100.0
+				: 0.0,
+			Baseline.PassStatHistoryFrames);
 
 		Report += TEXT("## Instructions for AI Analysis\n\n");
 		Report += TEXT("- This report contains one Baseline capture and has no Candidate comparison.\n");
@@ -217,6 +645,8 @@ namespace
 				Pass.MaxMs - Pass.MinMs,
 				GetPercentOfTotal(Pass.AverageMs, Baseline));
 		}
+
+		AppendSpikeMarkdown(Report, Baseline, TEXT("Baseline"));
 
 		Report += TEXT("\n## Managed CVar Snapshot\n\n");
 		Report += TEXT("| CVar | Value |\n|---|---|\n");
@@ -386,11 +816,32 @@ namespace
 		FString Report;
 		Report += TEXT("# Unreal Engine GPU Baseline/Candidate Report\n\n");
 		Report += FString::Printf(
-			TEXT("- Generated: `%s`\n- Project: `%s`\n- Engine: `%s`\n- Platform: `%hs`\n- Highlight threshold: `%.3f ms`\n\n"),
+			TEXT("- Generated: `%s`\n- Project: `%s`\n- Engine: `%s`\n"
+				"- Platform: `%hs`\n- Baseline Capture ID: `%s`\n"
+				"- Candidate Capture ID: `%s`\n"
+				"- Baseline Pass validity: `%d / %d (%.1f%%)`\n"
+				"- Candidate Pass validity: `%d / %d (%.1f%%)`\n"
+				"- Pass stat history: `%d frames` per sample\n"
+				"- Highlight threshold: `%.3f ms`\n\n"),
 			*FDateTime::Now().ToIso8601(),
 			FApp::GetProjectName(),
 			*FEngineVersion::Current().ToString(),
 			FPlatformProperties::PlatformName(),
+			*Baseline.CaptureId,
+			*Candidate.CaptureId,
+			Baseline.ValidPassSamples,
+			Baseline.PassSampleAttempts,
+			Baseline.PassSampleAttempts > 0
+				? static_cast<double>(Baseline.ValidPassSamples) /
+					static_cast<double>(Baseline.PassSampleAttempts) * 100.0
+				: 0.0,
+			Candidate.ValidPassSamples,
+			Candidate.PassSampleAttempts,
+			Candidate.PassSampleAttempts > 0
+				? static_cast<double>(Candidate.ValidPassSamples) /
+					static_cast<double>(Candidate.PassSampleAttempts) * 100.0
+				: 0.0,
+			Baseline.PassStatHistoryFrames,
 			HighlightThresholdMs);
 
 		Report += TEXT("## Instructions for AI Analysis\n\n");
@@ -398,6 +849,7 @@ namespace
 		Report += TEXT("- Prioritize `Total GPU Frame`, then the passes with the largest absolute average-time changes.\n");
 		Report += TEXT("- Correlate changed CVars with affected GPU passes, but distinguish correlation from confirmed causation.\n");
 		Report += TEXT("- A pass present in only one capture is represented as `0 ms` on the missing side; use the `Presence` column to identify it.\n");
+		Report += TEXT("- Pass timings are stat-history averages; use pass validity and spike alignment metadata when assigning confidence.\n");
 		Report += TEXT("- Consider capture duration, min/max variance, intermittent passes, and editor measurement overhead before drawing conclusions.\n");
 		Report += TEXT("- Respond with: executive summary, likely causes, confidence level, recommended verification steps, and optimization priorities.\n\n");
 
@@ -493,6 +945,9 @@ namespace
 				*FormatPercentage(Row.ChangePercent),
 				FMath::Abs(Row.DeltaMs) >= HighlightThresholdMs ? TEXT("Yes") : TEXT("No"));
 		}
+
+		AppendSpikeMarkdown(Report, Baseline, TEXT("Baseline"));
+		AppendSpikeMarkdown(Report, Candidate, TEXT("Candidate"));
 
 		Report += TEXT("\n## Full Managed CVar Snapshots\n\n");
 		Report += TEXT("| CVar | Baseline | Candidate |\n|---|---|---|\n");
@@ -662,6 +1117,80 @@ FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportReport(
 		Json = BuildBaselineJsonReport(Baseline);
 	}
 
+	const bool bMarkdownSaved = FFileHelper::SaveStringToFile(
+		Markdown,
+		*Result.MarkdownPath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	const bool bJsonSaved = FFileHelper::SaveStringToFile(
+		Json,
+		*Result.JsonPath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	if (!bMarkdownSaved || !bJsonSaved)
+	{
+		Result.ErrorMessage = FString::Printf(
+			TEXT("Failed to save %s%s."),
+			bMarkdownSaved ? TEXT("") : TEXT("Markdown"),
+			bJsonSaved ? TEXT("") : bMarkdownSaved ? TEXT("JSON") : TEXT(" and JSON"));
+		return Result;
+	}
+
+	Result.bSuccess = true;
+	return Result;
+}
+
+FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportSpikeLog(
+	const FGraphicsCVarProfiler& Profiler)
+{
+	FGraphicsCVarReportExportResult Result;
+	const FGraphicsCVarSnapshot& Baseline = Profiler.GetBaseline();
+	const FGraphicsCVarSnapshot& Candidate = Profiler.GetCandidate();
+	const bool bHasBaselineSpikes =
+		Baseline.bIsValid && !Baseline.SpikeEvents.IsEmpty();
+	const bool bHasCandidateSpikes =
+		Candidate.bIsValid && !Candidate.SpikeEvents.IsEmpty();
+	if (!bHasBaselineSpikes && !bHasCandidateSpikes)
+	{
+		Result.ErrorMessage = TEXT("No spike events are available to export.");
+		return Result;
+	}
+
+	const TSharedPtr<IPlugin> Plugin =
+		IPluginManager::Get().FindPlugin(TEXT("GraphicsCVarControl"));
+	if (!Plugin.IsValid())
+	{
+		Result.ErrorMessage = TEXT("GraphicsCVarControl plugin directory was not found.");
+		return Result;
+	}
+
+	const FString ReportDirectory = FPaths::Combine(
+		Plugin->GetBaseDir(),
+		TEXT("Reports"));
+	IFileManager::Get().MakeDirectory(*ReportDirectory, true);
+	if (!IFileManager::Get().DirectoryExists(*ReportDirectory))
+	{
+		Result.ErrorMessage = FString::Printf(
+			TEXT("Failed to create report directory: %s"),
+			*ReportDirectory);
+		return Result;
+	}
+
+	const FDateTime Now = FDateTime::Now();
+	const FString Timestamp = FString::Printf(
+		TEXT("%s_%03d"),
+		*Now.ToString(TEXT("%Y%m%d_%H%M%S")),
+		Now.GetMillisecond());
+	const FString BaseFileName = FString::Printf(
+		TEXT("GPUSpikeLog_%s"),
+		*Timestamp);
+	Result.MarkdownPath = FPaths::Combine(
+		ReportDirectory,
+		BaseFileName + TEXT(".md"));
+	Result.JsonPath = FPaths::Combine(
+		ReportDirectory,
+		BaseFileName + TEXT(".json"));
+
+	const FString Markdown = BuildSpikeLogMarkdown(Baseline, Candidate);
+	const FString Json = BuildSpikeLogJson(Baseline, Candidate);
 	const bool bMarkdownSaved = FFileHelper::SaveStringToFile(
 		Markdown,
 		*Result.MarkdownPath,

@@ -82,15 +82,21 @@ public:
 		const FGraphicsCVarProfiler& Profiler = FGraphicsCVarProfiler::Get();
 		const TArray<double>* BaselineSamples = &Profiler.GetBaseline().GPUFrameSamples;
 		const TArray<double>* CandidateSamples = &Profiler.GetCandidate().GPUFrameSamples;
+		const TArray<FGraphicsCVarSpikeEvent>* BaselineSpikes =
+			&Profiler.GetBaseline().SpikeEvents;
+		const TArray<FGraphicsCVarSpikeEvent>* CandidateSpikes =
+			&Profiler.GetCandidate().SpikeEvents;
 		if (Profiler.IsCapturing())
 		{
 			if (Profiler.GetActiveTarget() == EGraphicsCVarCaptureTarget::Baseline)
 			{
 				BaselineSamples = &Profiler.GetActiveGPUFrameSamples();
+				BaselineSpikes = &Profiler.GetActiveSpikeEvents();
 			}
 			else
 			{
 				CandidateSamples = &Profiler.GetActiveGPUFrameSamples();
+				CandidateSpikes = &Profiler.GetActiveSpikeEvents();
 			}
 		}
 
@@ -192,7 +198,42 @@ public:
 
 		DrawSeries(*BaselineSamples, FLinearColor(0.15f, 0.65f, 1.0f), LayerId + 2);
 		DrawSeries(*CandidateSamples, FLinearColor(1.0f, 0.55f, 0.15f), LayerId + 3);
-		return LayerId + 3;
+
+		auto DrawSpikeMarkers = [&](
+			const TArray<double>& Samples,
+			const TArray<FGraphicsCVarSpikeEvent>& Events)
+		{
+			if (Samples.Num() < 2)
+			{
+				return;
+			}
+
+			for (const FGraphicsCVarSpikeEvent& Event : Events)
+			{
+				if (!Samples.IsValidIndex(Event.PeakFrame))
+				{
+					continue;
+				}
+
+				const float X = LocalSize.X * static_cast<float>(Event.PeakFrame) /
+					static_cast<float>(Samples.Num() - 1);
+				TArray<FVector2D> MarkerLine;
+				MarkerLine.Add(FVector2D(X, 0.0f));
+				MarkerLine.Add(FVector2D(X, LocalSize.Y));
+				FSlateDrawElement::MakeLines(
+					OutDrawElements,
+					LayerId + 4,
+					AllottedGeometry.ToPaintGeometry(),
+					MarkerLine,
+					ESlateDrawEffect::None,
+					FLinearColor(1.0f, 0.08f, 0.04f, 0.9f),
+					true,
+					2.0f);
+			}
+		};
+		DrawSpikeMarkers(*BaselineSamples, *BaselineSpikes);
+		DrawSpikeMarkers(*CandidateSamples, *CandidateSpikes);
+		return LayerId + 4;
 	}
 };
 
@@ -729,6 +770,22 @@ public:
 		{
 			DisplayedResultRevision = CurrentRevision;
 			RebuildComparisonRows();
+			RebuildSpikeRows();
+		}
+
+		const FGraphicsCVarProfiler& Profiler = FGraphicsCVarProfiler::Get();
+		const TArray<FGraphicsCVarSpikeEvent>& VisibleSpikes =
+			Profiler.IsCapturing()
+				? Profiler.GetActiveSpikeEvents()
+				: Profiler.GetBaseline().SpikeEvents;
+		const uint64 CurrentSpikeSignature =
+			(static_cast<uint64>(VisibleSpikes.Num()) << 32) |
+			static_cast<uint32>(
+				VisibleSpikes.IsEmpty() ? 0 : VisibleSpikes.Last().PeakFrame + 1);
+		if (CurrentSpikeSignature != DisplayedSpikeSignature)
+		{
+			DisplayedSpikeSignature = CurrentSpikeSignature;
+			RebuildSpikeRows();
 		}
 	}
 
@@ -902,6 +959,186 @@ private:
 									}
 									return FReply::Handled();
 								})
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(6.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(SButton)
+								.Text(FText::FromString(TEXT("Export Spike Log")))
+								.ToolTipText(FText::FromString(TEXT(
+									"감지된 Baseline/Candidate 스파이크 사건만 별도의 Markdown과 JSON 로그로 저장합니다.\n"
+									"파일은 플러그인의 Reports 폴더에 GPUSpikeLog 이름으로 생성됩니다.")))
+								.IsEnabled_Lambda([]()
+								{
+									const FGraphicsCVarProfiler& Profiler =
+										FGraphicsCVarProfiler::Get();
+									return !Profiler.IsCapturing() &&
+										(
+											!Profiler.GetBaseline().SpikeEvents.IsEmpty() ||
+											!Profiler.GetCandidate().SpikeEvents.IsEmpty()
+										);
+								})
+								.OnClicked_Lambda([this]()
+								{
+									const FGraphicsCVarReportExportResult Result =
+										FGraphicsCVarReportExporter::ExportSpikeLog(
+											FGraphicsCVarProfiler::Get());
+									if (Result.bSuccess)
+									{
+										ExportStatusMessage = FString::Printf(
+											TEXT("Spike log exported: %s and %s"),
+											*Result.MarkdownPath,
+											*Result.JsonPath);
+										bLastExportSucceeded = true;
+									}
+									else
+									{
+										ExportStatusMessage = Result.ErrorMessage;
+										bLastExportSucceeded = false;
+									}
+									return FReply::Handled();
+								})
+						]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 4.0f, 0.0f, 8.0f)
+				[
+					SNew(SBorder)
+						.Padding(6.0f)
+						[
+							SNew(SVerticalBox)
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								[
+									SNew(SHorizontalBox)
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										.VAlign(VAlign_Center)
+										[
+											SNew(SCheckBox)
+												.IsChecked_Lambda([this]()
+												{
+													return bSpikeTrackingEnabled
+														? ECheckBoxState::Checked
+														: ECheckBoxState::Unchecked;
+												})
+												.OnCheckStateChanged_Lambda([this](
+													const ECheckBoxState NewState)
+												{
+													bSpikeTrackingEnabled =
+														NewState == ECheckBoxState::Checked;
+												})
+												.IsEnabled_Lambda([]()
+												{
+													return !FGraphicsCVarProfiler::Get().IsCapturing();
+												})
+												.ToolTipText(FText::FromString(TEXT(
+													"연속 기록 중 Total GPU가 프레임 예산과 이동 기준값을 모두 넘으면 "
+													"스파이크 사건과 증가한 GPU Pass를 기록합니다.")))
+												[
+													SNew(STextBlock)
+														.Text(FText::FromString(TEXT("Spike Tracking")))
+												]
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										.Padding(14.0f, 0.0f, 4.0f, 0.0f)
+										.VAlign(VAlign_Center)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TEXT("Frame Budget")))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										[
+											SNew(SSpinBox<float>)
+												.MinValue(0.1f)
+												.MaxValue(1000.0f)
+												.Delta(0.1f)
+												.Value_Lambda([this]() { return SpikeFrameBudgetMs; })
+												.OnValueChanged_Lambda([this](const float NewValue)
+												{
+													SpikeFrameBudgetMs = NewValue;
+												})
+												.IsEnabled_Lambda([this]()
+												{
+													return bSpikeTrackingEnabled &&
+														!FGraphicsCVarProfiler::Get().IsCapturing();
+												})
+												.ToolTipText(FText::FromString(TEXT(
+													"스파이크로 인정할 최소 Total GPU 시간입니다. "
+													"60 FPS 예산은 16.67 ms입니다.")))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										.Padding(12.0f, 0.0f, 4.0f, 0.0f)
+										.VAlign(VAlign_Center)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TEXT("Delta")))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										[
+											SNew(SSpinBox<float>)
+												.MinValue(0.01f)
+												.MaxValue(1000.0f)
+												.Delta(0.1f)
+												.Value_Lambda([this]() { return SpikeDeltaThresholdMs; })
+												.OnValueChanged_Lambda([this](const float NewValue)
+												{
+													SpikeDeltaThresholdMs = NewValue;
+												})
+												.IsEnabled_Lambda([this]()
+												{
+													return bSpikeTrackingEnabled &&
+														!FGraphicsCVarProfiler::Get().IsCapturing();
+												})
+												.ToolTipText(FText::FromString(TEXT(
+													"최근 프레임 중앙값보다 최소 몇 ms 높아야 하는지 설정합니다.")))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										.Padding(12.0f, 0.0f, 4.0f, 0.0f)
+										.VAlign(VAlign_Center)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TEXT("Rolling Frames")))
+										]
+										+ SHorizontalBox::Slot()
+										.AutoWidth()
+										[
+											SNew(SSpinBox<int32>)
+												.MinValue(30)
+												.MaxValue(600)
+												.Value_Lambda([this]() { return SpikeRollingWindowFrames; })
+												.OnValueChanged_Lambda([this](const int32 NewValue)
+												{
+													SpikeRollingWindowFrames = NewValue;
+												})
+												.IsEnabled_Lambda([this]()
+												{
+													return bSpikeTrackingEnabled &&
+														!FGraphicsCVarProfiler::Get().IsCapturing();
+												})
+												.ToolTipText(FText::FromString(TEXT(
+													"평상시 Total GPU 중앙값을 계산할 이전 프레임 수입니다.")))
+										]
+								]
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, 5.0f, 0.0f, 0.0f)
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(TEXT(
+											"기본 조건: Total GPU >= 16.67 ms 이면서 최근 120프레임 중앙값보다 2.0 ms 이상 증가. "
+											"사건당 이전 30프레임과 이후 60프레임을 보존합니다.")))
+										.ColorAndOpacity(FSlateColor(
+											FLinearColor(0.70f, 0.70f, 0.70f)))
+										.AutoWrapText(true)
+								]
 						]
 				]
 				+ SVerticalBox::Slot()
@@ -1137,6 +1374,31 @@ private:
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 10.0f)
+				[
+					SNew(SBorder)
+						.Padding(6.0f)
+						[
+							SNew(SVerticalBox)
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(TEXT("Spike Events")))
+										.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+										.ToolTipText(FText::FromString(TEXT(
+											"빨간 그래프 마커가 표시된 프레임과 당시 가장 크게 변한 GPU Pass를 보여줍니다.")))
+								]
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								[
+									SAssignNew(SpikeRowsBox, SVerticalBox)
+								]
+						]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				[
 					SAssignNew(ComparisonRowsBox, SVerticalBox)
 				]
@@ -1152,10 +1414,20 @@ private:
 			CVarValues.Add(CVarName, GetCVarValue(CVarName));
 		}
 
+		FGraphicsCVarSpikeSettings SpikeSettings;
+		SpikeSettings.bEnabled = bSpikeTrackingEnabled;
+		SpikeSettings.FrameBudgetMs = SpikeFrameBudgetMs;
+		SpikeSettings.DeltaThresholdMs = SpikeDeltaThresholdMs;
+		SpikeSettings.RollingWindowFrames = SpikeRollingWindowFrames;
+		SpikeSettings.PreFrames = 30;
+		SpikeSettings.PostFrames = 60;
+		SpikeSettings.MaxEvents = 20;
+
 		FGraphicsCVarProfiler::Get().StartContinuousCapture(
 			Target,
 			CVarValues,
-			bAutoStopContinuousCapture ? ContinuousTargetFrames : 0);
+			bAutoStopContinuousCapture ? ContinuousTargetFrames : 0,
+			SpikeSettings);
 	}
 
 	static FString FormatPassStats(
@@ -1171,6 +1443,158 @@ private:
 				Min,
 				Max)
 			: TEXT("--");
+	}
+
+	void RebuildSpikeRows()
+	{
+		if (!SpikeRowsBox.IsValid())
+		{
+			return;
+		}
+
+		SpikeRowsBox->ClearChildren();
+		const FGraphicsCVarProfiler& Profiler = FGraphicsCVarProfiler::Get();
+		const bool bCapturingBaseline =
+			Profiler.IsCapturing() &&
+			Profiler.GetActiveTarget() == EGraphicsCVarCaptureTarget::Baseline;
+		const bool bCapturingCandidate =
+			Profiler.IsCapturing() &&
+			Profiler.GetActiveTarget() == EGraphicsCVarCaptureTarget::Candidate;
+		const TArray<FGraphicsCVarSpikeEvent>& BaselineEvents =
+			bCapturingBaseline
+				? Profiler.GetActiveSpikeEvents()
+				: Profiler.GetBaseline().SpikeEvents;
+		const TArray<FGraphicsCVarSpikeEvent>& CandidateEvents =
+			bCapturingCandidate
+				? Profiler.GetActiveSpikeEvents()
+				: Profiler.GetCandidate().SpikeEvents;
+
+		if (BaselineEvents.IsEmpty() && CandidateEvents.IsEmpty())
+		{
+			SpikeRowsBox->AddSlot()
+				.AutoHeight()
+				.Padding(0.0f, 4.0f)
+				[
+					SNew(STextBlock)
+						.Text(FText::FromString(TEXT(
+							"아직 감지된 스파이크가 없습니다. Spike Tracking을 켜고 연속 기록을 시작하세요.")))
+						.ColorAndOpacity(FSlateColor(
+							FLinearColor(0.55f, 0.55f, 0.55f)))
+						.AutoWrapText(true)
+				];
+			return;
+		}
+
+		auto AppendEvents = [this](
+			const FString& CaptureLabel,
+			const TArray<FGraphicsCVarSpikeEvent>& Events)
+		{
+			for (const FGraphicsCVarSpikeEvent& Event : Events)
+			{
+				TSharedRef<SVerticalBox> EventBox = SNew(SVerticalBox);
+				EventBox->AddSlot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(FString::Printf(
+								TEXT("%s Spike #%d | Frame %d | Peak %.3f ms | "
+									"Rolling %.3f ms | Delta +%.3f ms | %d frame span"),
+								*CaptureLabel,
+								Event.EventIndex,
+								Event.PeakFrame,
+								Event.PeakTotalMs,
+								Event.BaselineTotalMs,
+								Event.DeltaTotalMs,
+								Event.LastSpikeFrame - Event.StartFrame + 1)))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+							.ColorAndOpacity(FSlateColor(
+								FLinearColor(1.0f, 0.35f, 0.28f)))
+					];
+				EventBox->AddSlot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f, 0.0f, 3.0f)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(FString::Printf(
+								TEXT("Stored window: Frame %d - %d | Pass sample: %s"),
+								Event.WindowStartFrame,
+								Event.WindowEndFrame,
+								Event.bHasAlignedPassSample
+									? *FString::Printf(
+										TEXT("Frame %d (%+d)"),
+										Event.PassSampleFrame,
+										Event.PassFrameOffset)
+									: TEXT("Unavailable"))))
+							.ColorAndOpacity(FSlateColor(
+								Event.bHasAlignedPassSample
+									? FLinearColor(0.60f, 0.60f, 0.60f)
+									: FLinearColor(1.0f, 0.55f, 0.12f)))
+					];
+
+				if (!Event.bHasAlignedPassSample)
+				{
+					EventBox->AddSlot()
+						.AutoHeight()
+						.Padding(8.0f, 1.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock)
+								.Text(FText::FromString(TEXT(
+									"Peak 주변 ±5프레임에 유효한 GPU Pass 표본이 없어 원인 Pass를 표시하지 않습니다.")))
+								.ColorAndOpacity(FSlateColor(
+									FLinearColor(1.0f, 0.55f, 0.12f)))
+								.AutoWrapText(true)
+						];
+				}
+
+				const int32 DetailCount = FMath::Min(5, Event.PassDeltas.Num());
+				for (int32 Index = 0; Index < DetailCount; ++Index)
+				{
+					const FGraphicsCVarSpikePassDelta& Delta =
+						Event.PassDeltas[Index];
+					const FString PercentText = Delta.ChangePercent.IsSet()
+						? FString::Printf(
+							TEXT(" (%+.1f%%)"),
+							Delta.ChangePercent.GetValue())
+						: TEXT("");
+					const FLinearColor DeltaColor =
+						Delta.DeltaMs < 0.0
+							? FLinearColor(0.45f, 1.0f, 0.50f)
+							: FLinearColor(1.0f, 0.45f, 0.40f);
+					EventBox->AddSlot()
+						.AutoHeight()
+						.Padding(8.0f, 1.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock)
+								.Text(FText::FromString(FString::Printf(
+									TEXT("%d. %s: %.3f -> %.3f ms, %+.3f ms%s"),
+									Index + 1,
+									*Delta.DisplayName,
+									Delta.BaselineMs,
+									Delta.PeakMs,
+									Delta.DeltaMs,
+									*PercentText)))
+								.ColorAndOpacity(FSlateColor(DeltaColor))
+								.ToolTipText(FText::FromString(Delta.Id))
+						];
+				}
+
+				SpikeRowsBox->AddSlot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SBorder)
+							.Padding(6.0f)
+							.BorderBackgroundColor(FSlateColor(
+								FLinearColor(0.20f, 0.025f, 0.02f, 1.0f)))
+							[
+								EventBox
+							]
+					];
+			}
+		};
+
+		AppendEvents(TEXT("Baseline"), BaselineEvents);
+		AppendEvents(TEXT("Candidate"), CandidateEvents);
 	}
 
 	void RebuildComparisonRows()
@@ -1480,12 +1904,18 @@ private:
 
 	int32 ContinuousTargetFrames = 300;
 	bool bAutoStopContinuousCapture = false;
+	bool bSpikeTrackingEnabled = true;
+	float SpikeFrameBudgetMs = 16.67f;
+	float SpikeDeltaThresholdMs = 2.0f;
+	int32 SpikeRollingWindowFrames = 120;
 	FString ControlSearchText;
 	FString ExportStatusMessage;
 	bool bLastExportSucceeded = false;
 	float HighlightThresholdMs = 0.2f;
 	uint64 DisplayedResultRevision = MAX_uint64;
+	uint64 DisplayedSpikeSignature = MAX_uint64;
 	TSharedPtr<SVerticalBox> ComparisonRowsBox;
+	TSharedPtr<SVerticalBox> SpikeRowsBox;
 };
 
 class FGraphicsCVarControlEditorModule final : public IModuleInterface

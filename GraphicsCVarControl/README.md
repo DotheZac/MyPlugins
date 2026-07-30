@@ -2,7 +2,7 @@
 
 Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candidate GPU 성능을 비교하며, 결과를 AI 분석용 보고서로 내보내는 Editor 전용 플러그인입니다.
 
-- 버전: `1.8.0`
+- 버전: `1.9.0`
 - 제작자: `DotheZac`
 - 모듈: `GraphicsCVarControlEditor`
 - 지원 환경: Unreal Engine 5.7 Editor
@@ -16,11 +16,14 @@ Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candi
 - Baseline/Candidate GPU Snapshot 캡처
 - 수동 종료 및 목표 프레임 자동 종료 지원
 - Total GPU Frame의 프레임별 그래프 표시
+- 이동 기준값을 이용한 Total GPU 스파이크 감지 및 그래프 마커
+- 스파이크 Peak 주변의 GPU Pass 증가량과 반복 기여 Pass 집계
 - Total 및 GPU Pass별 평균, 최솟값, 최댓값 기록
 - 절대 시간 차이와 변화율 비교
 - 의미 있는 변화 하이라이트 및 개선/악화 색상 표시
 - Shader Complexity, Wireframe, Lumen 등 Rendering Debug View 전환
 - Baseline 단독 또는 Baseline/Candidate 비교용 Markdown/JSON AI 보고서 생성
+- 스파이크 사건 전용 Markdown/JSON 로그 생성
 
 ## 에디터 창 열기
 
@@ -199,6 +202,26 @@ Snapshot 창에는 Streaming 및 렌더링 캐시 안정화 대기 시간을 확
 
 기록 데이터는 모두 유지하지만 장시간 캡처 시 UI 부하를 줄이기 위해 그래프에 그리는 점은 화면 폭에 맞게 축약됩니다.
 
+### Spike Tracking
+
+`Spike Tracking`을 켜면 연속 기록 중 Total GPU가 다음 두 조건을 모두 만족할 때 스파이크 사건으로 기록합니다.
+
+- `Frame Budget` 이상
+- 최근 `Rolling Frames`의 Total GPU 중앙값보다 `Delta` 이상 증가
+
+기본값은 `16.67 ms`, `2.0 ms`, `120 frames`입니다. 각 사건은 Peak 이전 30프레임과 마지막 스파이크 이후 60프레임을 보존하며, 연속된 스파이크는 하나의 사건으로 묶습니다.
+
+그래프에는 사건의 Peak가 빨간 마커로 표시됩니다. `Spike Events`에는 다음 정보가 표시됩니다.
+
+- Total GPU Peak와 이동 중앙값 대비 증가량
+- 사건 시작/종료 및 보존 프레임 범위
+- Peak와 GPU Pass 표본의 실제 정렬 프레임
+- 증가량이 큰 GPU Pass 상위 항목
+
+GPU Pass Snapshot 전체가 비거나 `Queue Total`이 없으면 해당 표본은 무효로 제외합니다. 무효 표본을 모든 Pass가 `0 ms`인 것으로 해석하지 않으며, Peak 기준 ±5프레임에 유효한 Pass 표본이 없으면 해당 사건의 Pass 원인을 표시하지 않습니다.
+
+`stat gpu` Pass 값은 단일 프레임의 정확한 타임스탬프가 아니라 20프레임 HUD 히스토리 평균입니다. Total GPU Peak와 함께 원인 후보를 찾는 용도로 사용하고 GPU Queue와 중첩 Pass 시간을 합산하지 않습니다.
+
 ### 초기화
 
 `Clear`를 누르면 Baseline과 Candidate Snapshot을 모두 초기화합니다.
@@ -225,6 +248,12 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 - `GPUBaseline_YYYYMMDD_HHMMSS_MMM.json`
 - `GPUProfile_YYYYMMDD_HHMMSS_MMM.md`
 - `GPUProfile_YYYYMMDD_HHMMSS_MMM.json`
+- `GPUSpikeLog_YYYYMMDD_HHMMSS_MMM.md`
+- `GPUSpikeLog_YYYYMMDD_HHMMSS_MMM.json`
+
+`Export Spike Log`는 Baseline 또는 Candidate에서 감지된 스파이크가 있을 때 활성화됩니다. Spike Log에는 사건별 Total GPU 전후 표본, 정렬된 Pass 변화량, Pass 표본 유효률과 반복적으로 증가한 Pass 집계가 포함됩니다.
+
+AI Report와 Spike Log를 함께 분석할 때는 각 파일의 `Capture ID`가 일치하는지 확인합니다. 동일한 Snapshot에서 내보낸 파일만 같은 측정 구간으로 연결합니다.
 
 보고서 파일은 Git 및 SVN 상태 목록에서 제외됩니다.
 
@@ -260,7 +289,8 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 
 1. `AI_REPORT_GUIDE.md`
 2. `GPUBaseline_*.md` 또는 `GPUProfile_*.md`
-3. 필요하면 같은 이름의 `.json`
+3. 동일한 Capture ID의 `GPUSpikeLog_*.md`
+4. 전후 프레임 원본 데이터가 필요하면 각 보고서의 `.json`
 
 ## 측정 권장 사항
 
@@ -279,6 +309,7 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 | Preset 1~5 | `GEditorPerProjectIni` | 유지 |
 | Baseline/Candidate Snapshot | 에디터 메모리 | 유지되지 않음 |
 | AI 보고서 | `Reports` 폴더 | 유지 |
+| Spike Log | `Reports` 폴더 | 유지 |
 
 ## 구현 구조
 
@@ -291,9 +322,9 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 - `Private/GraphicsCVarDebugViews.h/.cpp`
   - Viewport 렌더링 시각화 모드 전환 UI
 - `Private/GraphicsCVarProfiler.h/.cpp`
-  - GPU 캡처, 연속 기록, 통계 누적, Snapshot 비교
+  - GPU 캡처, 연속 기록, 통계 누적, Snapshot 비교, 스파이크 감지 및 Pass 정렬
 - `Private/GraphicsCVarReportExporter.h/.cpp`
-  - Markdown/JSON 보고서 생성과 `Reports` 저장
+  - AI Report와 Spike Log Markdown/JSON 생성 및 `Reports` 저장
 - `AI_REPORT_GUIDE.md`
   - AI 보고서 해석 규칙과 권장 프롬프트
 - `CHANGELOG.md`
