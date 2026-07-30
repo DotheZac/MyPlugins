@@ -110,11 +110,12 @@ GPU Pass가 한쪽 Snapshot에서만 감지된 경우 누락된 쪽의 시간은
 
 ## 캡처 모드
 
-- `Fixed Frames`: 기존 `Capture Baseline/Candidate`로 지정 프레임을 측정
 - `Manual Stop`: `Start` 후 사용자가 `Stop`을 누를 때까지 측정
 - `Auto Stop`: `Target Frames`에 도달하면 자동 종료
 
-모든 모드에서 워밍업 프레임은 실제 `Sample Frames`에 포함되지 않습니다.
+두 모드 모두 GPU Pass를 프레임마다 누적하며, 워밍업 프레임은 실제 `Sample Frames`에 포함되지 않습니다.
+
+레벨 시작 또는 CVar 변경 직후에는 Streaming과 Lumen, Shadow 등 렌더링 캐시 상태가 안정되지 않았을 수 있습니다. 가능하면 Snapshot 창의 안정화 타이머가 권장 시간 `30.000초`에 도달한 뒤 캡처합니다. 타이머는 측정을 지연하거나 버튼을 비활성화하지 않는 안내 기능입니다.
 
 서로 비교할 때는 가능하면 다음 조건을 맞춥니다.
 

@@ -1,3 +1,11 @@
+## 1.8.0
+- CVar 현재 값 UI가 `FindConsoleVariable()`을 반복 호출하지 않도록 `IConsoleVariable*` 캐시를 추가하여 Console Manager 성능 경고 제거
+- PIE/Simulate 시작, Graphics CVar 변경, Preset Load 시 0초부터 시작하는 30초 안정화 타이머 추가
+- 안정화 타이머를 소수점 셋째 자리까지 표시하고 30초 도달 시 `30.000초`에서 정지하도록 구성
+- Snapshot 창에 레벨 시작 또는 CVar 변경 후 약 30초 안정화를 권장하는 빨간색 안내 문구 추가
+- 중복되던 `Sample Frames`, `Capture Baseline`, `Capture Candidate` UI를 제거하고 `Start Baseline/Candidate`의 Manual Stop 및 Auto Stop 방식으로 통합
+- 모든 사용자 캡처 경로에서 GPU Pass를 프레임마다 누적하여 평균/최소/최대 통계를 계산하도록 측정 방식 통일
+
 ## 1.7.0
 - `Graphics CVar Control`에 표시 이름, 카테고리, 실제 CVar 명령어를 대상으로 하는 대소문자 무시 부분 검색 기능 추가
 - Lumen GI Screen Traces, Mesh SDF Tracing, Trace/Gather Resolution, Adaptive Probes와 Lumen Reflection Screen Traces, Mesh SDF Tracing, Max Roughness 세부 제어 8개 추가

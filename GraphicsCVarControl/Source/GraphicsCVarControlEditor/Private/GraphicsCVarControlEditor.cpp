@@ -5,10 +5,12 @@
 #include "GraphicsCVarReportExporter.h"
 
 #include "Containers/Map.h"
+#include "Editor.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/Docking/TabManager.h"
 #include "CoreGlobals.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
@@ -376,22 +378,116 @@ static FString GetCategoryDescription(const FString& Category)
 	return TEXT("이 카테고리에 포함된 그래픽 설정을 조절합니다.");
 }
 
+class FGraphicsCVarStabilizationTimer final
+{
+public:
+	static FGraphicsCVarStabilizationTimer& Get()
+	{
+		static FGraphicsCVarStabilizationTimer Instance;
+		return Instance;
+	}
+
+	void Restart(const FString& Trigger)
+	{
+		StartedAtSeconds = FPlatformTime::Seconds();
+		LastTrigger = Trigger;
+		bHasStarted = true;
+	}
+
+	FText GetDisplayText() const
+	{
+		if (!bHasStarted)
+		{
+			return FText::FromString(TEXT(
+				"Stabilization Timer: 아직 시작되지 않았습니다."));
+		}
+
+		const double ElapsedSeconds =
+			FMath::Clamp(
+				FPlatformTime::Seconds() - StartedAtSeconds,
+				0.0,
+				RecommendedWaitSeconds);
+		if (ElapsedSeconds < RecommendedWaitSeconds)
+		{
+			return FText::FromString(FString::Printf(
+				TEXT("Stabilization Timer: %.3f초 / 권장 30초  |  마지막 시작: %s"),
+				ElapsedSeconds,
+				*LastTrigger));
+		}
+
+		return FText::FromString(FString::Printf(
+			TEXT("Stabilization Timer: %.3f초 / 권장 시간 도달  |  마지막 시작: %s"),
+			ElapsedSeconds,
+			*LastTrigger));
+	}
+
+	FSlateColor GetDisplayColor() const
+	{
+		if (!bHasStarted)
+		{
+			return FSlateColor(FLinearColor(0.65f, 0.65f, 0.65f));
+		}
+
+		const double ElapsedSeconds =
+			FMath::Clamp(
+				FPlatformTime::Seconds() - StartedAtSeconds,
+				0.0,
+				RecommendedWaitSeconds);
+		return ElapsedSeconds < RecommendedWaitSeconds
+			? FSlateColor(FLinearColor(1.0f, 0.18f, 0.12f))
+			: FSlateColor(FLinearColor(0.25f, 0.90f, 0.35f));
+	}
+
+private:
+	static constexpr double RecommendedWaitSeconds = 30.0;
+
+	double StartedAtSeconds = 0.0;
+	FString LastTrigger;
+	bool bHasStarted = false;
+};
+
+static IConsoleVariable* GetCachedCVar(const FString& CVarName)
+{
+	static TMap<FString, IConsoleVariable*> CachedCVars;
+	if (IConsoleVariable** CachedVariable = CachedCVars.Find(CVarName))
+	{
+		return *CachedVariable;
+	}
+
+	IConsoleVariable* Variable =
+		IConsoleManager::Get().FindConsoleVariable(*CVarName);
+	if (Variable)
+	{
+		CachedCVars.Add(CVarName, Variable);
+	}
+	return Variable;
+}
+
 static FString GetCVarValue(const FString& CVarName)
 {
-	if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(*CVarName))
+	if (IConsoleVariable* Variable = GetCachedCVar(CVarName))
 	{
 		return Variable->GetString();
 	}
-
 	return TEXT("missing");
 }
 
-static void SetCVarValue(const FString& CVarName, const FString& Value)
+static bool SetCVarValue(
+	const FString& CVarName,
+	const FString& Value,
+	const bool bRestartStabilizationTimer = true)
 {
-	if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(*CVarName))
+	if (IConsoleVariable* Variable = GetCachedCVar(CVarName))
 	{
 		Variable->Set(*Value, ECVF_SetByConsole);
+		if (bRestartStabilizationTimer)
+		{
+			FGraphicsCVarStabilizationTimer::Get().Restart(
+				FString::Printf(TEXT("CVar 변경: %s"), *CVarName));
+		}
+		return true;
 	}
+	return false;
 }
 
 static FString GetPresetSectionName(const int32 PresetIndex)
@@ -430,6 +526,7 @@ static void LoadPreset(const int32 PresetIndex)
 	}
 
 	const FString SectionName = GetPresetSectionName(PresetIndex);
+	bool bLoadedAnyCVar = false;
 
 	for (const FCVarControl& Control : GetGraphicsCVarControls())
 	{
@@ -437,8 +534,15 @@ static void LoadPreset(const int32 PresetIndex)
 		FString Value;
 		if (GConfig->GetString(*SectionName, *CVarName, Value, GEditorPerProjectIni))
 		{
-			SetCVarValue(CVarName, Value);
+			bLoadedAnyCVar |= SetCVarValue(CVarName, Value, false);
 		}
+	}
+
+	if (bLoadedAnyCVar)
+	{
+		FGraphicsCVarStabilizationTimer::Get().Restart(FString::Printf(
+			TEXT("Preset %d Load"),
+			PresetIndex));
 	}
 }
 
@@ -683,29 +787,39 @@ private:
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 10.0f)
+				[
+					SNew(STextBlock)
+						.Text(FText::FromString(TEXT(
+							"중요: 레벨 시작 또는 CVar 변경 후 약 30초 동안 Streaming과 렌더링 캐시가 안정화된 뒤 Baseline/Candidate를 캡처하세요.")))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+						.ColorAndOpacity(FSlateColor(
+							FLinearColor(1.0f, 0.12f, 0.08f)))
+						.AutoWrapText(true)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 10.0f)
+				[
+					SNew(STextBlock)
+						.Text_Lambda([]()
+						{
+							return FGraphicsCVarStabilizationTimer::Get()
+								.GetDisplayText();
+						})
+						.ColorAndOpacity_Lambda([]()
+						{
+							return FGraphicsCVarStabilizationTimer::Get()
+								.GetDisplayColor();
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+						.AutoWrapText(true)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				.Padding(0.0f, 0.0f, 0.0f, 8.0f)
 				[
 					SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot()
-						.AutoWidth()
-						.VAlign(VAlign_Center)
-						[
-							SNew(STextBlock)
-								.Text(FText::FromString(TEXT("Sample Frames")))
-						]
-						+ SHorizontalBox::Slot()
-						.AutoWidth()
-						.Padding(8.0f, 0.0f, 12.0f, 0.0f)
-						[
-							SNew(SSpinBox<int32>)
-								.MinValue(10)
-								.MaxValue(600)
-								.Value_Lambda([this]() { return SampleFrames; })
-								.OnValueChanged_Lambda([this](const int32 NewValue)
-								{
-									SampleFrames = NewValue;
-								})
-						]
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
 						.VAlign(VAlign_Center)
@@ -731,43 +845,6 @@ private:
 								})
 								.ToolTipText(FText::FromString(TEXT(
 									"행 하이라이트에 사용할 최소 GPU 시간 변화량입니다.")))
-						]
-						+ SHorizontalBox::Slot()
-						.AutoWidth()
-						.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-						[
-							SNew(SButton)
-								.Text(FText::FromString(TEXT("Capture Baseline")))
-								.ToolTipText(FText::FromString(TEXT(
-									"현재 CVar 상태와 GPU 성능을 기준값으로 측정합니다.\n"
-									"비교할 설정으로 변경하기 전에 먼저 실행하세요.")))
-								.IsEnabled_Lambda([]()
-								{
-									return !FGraphicsCVarProfiler::Get().IsCapturing();
-								})
-								.OnClicked_Lambda([this]()
-								{
-									StartCapture(EGraphicsCVarCaptureTarget::Baseline);
-									return FReply::Handled();
-								})
-						]
-						+ SHorizontalBox::Slot()
-						.AutoWidth()
-						[
-							SNew(SButton)
-								.Text(FText::FromString(TEXT("Capture Candidate")))
-								.ToolTipText(FText::FromString(TEXT(
-									"변경된 CVar 상태와 GPU 성능을 비교값으로 측정합니다.\n"
-									"Baseline 측정 후 설정을 변경한 다음 실행하세요.")))
-								.IsEnabled_Lambda([]()
-								{
-									return !FGraphicsCVarProfiler::Get().IsCapturing();
-								})
-								.OnClicked_Lambda([this]()
-								{
-									StartCapture(EGraphicsCVarCaptureTarget::Candidate);
-									return FReply::Handled();
-								})
 						]
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
@@ -1064,18 +1141,6 @@ private:
 					SAssignNew(ComparisonRowsBox, SVerticalBox)
 				]
 			];
-	}
-
-	void StartCapture(const EGraphicsCVarCaptureTarget Target)
-	{
-		TMap<FString, FString> CVarValues;
-		for (const FCVarControl& Control : GetGraphicsCVarControls())
-		{
-			const FString CVarName(Control.CVarName);
-			CVarValues.Add(CVarName, GetCVarValue(CVarName));
-		}
-
-		FGraphicsCVarProfiler::Get().StartCapture(Target, CVarValues, SampleFrames);
 	}
 
 	void StartContinuousCapture(const EGraphicsCVarCaptureTarget Target)
@@ -1413,7 +1478,6 @@ private:
 			];
 	}
 
-	int32 SampleFrames = 60;
 	int32 ContinuousTargetFrames = 300;
 	bool bAutoStopContinuousCapture = false;
 	FString ControlSearchText;
@@ -1429,6 +1493,10 @@ class FGraphicsCVarControlEditorModule final : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+		BeginPIEHandle = FEditorDelegates::BeginPIE.AddRaw(
+			this,
+			&FGraphicsCVarControlEditorModule::HandleBeginPIE);
+
 		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 			GraphicsCVarControlTabName,
 			FOnSpawnTab::CreateRaw(this, &FGraphicsCVarControlEditorModule::SpawnControlTab))
@@ -1453,6 +1521,12 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		if (BeginPIEHandle.IsValid())
+		{
+			FEditorDelegates::BeginPIE.Remove(BeginPIEHandle);
+			BeginPIEHandle.Reset();
+		}
+
 		FGraphicsCVarProfiler::Get().Shutdown();
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
@@ -1462,6 +1536,12 @@ public:
 	}
 
 private:
+	void HandleBeginPIE(const bool bIsSimulating)
+	{
+		FGraphicsCVarStabilizationTimer::Get().Restart(
+			bIsSimulating ? TEXT("Simulate 시작") : TEXT("PIE 시작"));
+	}
+
 	TSharedRef<SDockTab> SpawnControlTab(const FSpawnTabArgs& Args)
 	{
 		(void)Args;
@@ -1551,6 +1631,8 @@ private:
 	{
 		FGlobalTabmanager::Get()->TryInvokeTab(GraphicsCVarDebugViewsTabName);
 	}
+
+	FDelegateHandle BeginPIEHandle;
 };
 
 IMPLEMENT_MODULE(FGraphicsCVarControlEditorModule, GraphicsCVarControlEditor)

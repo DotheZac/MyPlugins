@@ -2,7 +2,7 @@
 
 Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candidate GPU 성능을 비교하며, 결과를 AI 분석용 보고서로 내보내는 Editor 전용 플러그인입니다.
 
-- 버전: `1.7.0`
+- 버전: `1.8.0`
 - 제작자: `DotheZac`
 - 모듈: `GraphicsCVarControlEditor`
 - 지원 환경: Unreal Engine 5.7 Editor
@@ -14,7 +14,7 @@ Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candi
 - CVar 조합을 Preset 1~5에 저장하고 다시 적용
 - CVar 제어 창과 GPU 비교 창을 독립된 탭으로 제공
 - Baseline/Candidate GPU Snapshot 캡처
-- 고정 프레임, 수동 종료, 목표 프레임 자동 종료 지원
+- 수동 종료 및 목표 프레임 자동 종료 지원
 - Total GPU Frame의 프레임별 그래프 표시
 - Total 및 GPU Pass별 평균, 최솟값, 최댓값 기록
 - 절대 시간 차이와 변화율 비교
@@ -139,16 +139,7 @@ Preset 데이터는 `GEditorPerProjectIni`에 저장됩니다. 에디터를 다�
 
 Snapshot은 에디터 메모리에만 유지됩니다. 에디터를 종료하면 사라지므로 필요한 결과는 AI 보고서로 내보내야 합니다.
 
-### 고정 프레임 캡처
-
-1. `Sample Frames`를 설정합니다.
-2. 기준 상태에서 `Capture Baseline`을 누릅니다.
-3. CVar 또는 장면 설정을 변경합니다.
-4. `Capture Candidate`를 누릅니다.
-
-설정한 프레임 수를 측정하면 자동으로 Snapshot이 확정됩니다.
-
-### 연속 기록
+### Snapshot 기록
 
 #### Manual Stop
 
@@ -165,6 +156,20 @@ Snapshot은 에디터 메모리에만 유지됩니다. 에디터를 종료하면
 4. 목표 프레임에 도달하면 자동으로 종료됩니다.
 
 기본 목표값은 `300`프레임입니다. 모든 캡처는 실제 측정 전에 10프레임 워밍업을 수행하며, 워밍업 프레임은 결과의 측정 프레임 수에 포함되지 않습니다.
+
+Manual Stop과 Auto Stop 모두 Total GPU Frame과 GPU Pass를 프레임마다 누적하여 평균, 최솟값, 최댓값을 계산합니다.
+
+### 안정화 타이머
+
+Snapshot 창에는 Streaming 및 렌더링 캐시 안정화 대기 시간을 확인하기 위한 타이머가 표시됩니다.
+
+- PIE 또는 Simulate 시작
+- Graphics CVar Control에서 CVar 변경
+- Preset Load
+
+위 이벤트가 발생하면 타이머가 `0.000초`부터 시작하고 `30.000초`에서 정지합니다. 30초 전에는 빨간색, 권장 시간 도달 후에는 녹색으로 표시됩니다.
+
+타이머는 단순 안내 기능이며 `Start Baseline`, `Start Candidate`, `Stop` 버튼을 비활성화하거나 기록 시작을 지연하지 않습니다. `Start` 또는 `Stop`을 눌러도 타이머는 초기화되지 않습니다.
 
 ### 비교 결과
 
