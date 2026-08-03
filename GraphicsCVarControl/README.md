@@ -2,7 +2,7 @@
 
 Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candidate GPU 성능을 비교하며, 결과를 AI 분석용 보고서로 내보내는 Editor 전용 플러그인입니다.
 
-- 버전: `1.9.0`
+- 버전: `2.0.0`
 - 제작자: `DotheZac`
 - 모듈: `GraphicsCVarControlEditor`
 - 지원 환경: Unreal Engine 5.7 Editor
@@ -24,6 +24,10 @@ Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candi
 - Shader Complexity, Wireframe, Lumen 등 Rendering Debug View 전환
 - Baseline 단독 또는 Baseline/Candidate 비교용 Markdown/JSON AI 보고서 생성
 - 스파이크 사건 전용 Markdown/JSON 로그 생성
+- ProfileGPU 단일/Multi Capture와 Queue/Pass 통계 비교
+- 캡처 메모, 에셋·Actor 등록 및 수량 기록
+- Blueprint, Mesh, Material, Light, SceneCapture, Niagara 렌더링 구성 분석
+- GPU 변화와 관련 대상 정보를 결합한 ProfileGPU AI 보고서 생성
 
 ## 에디터 창 열기
 
@@ -32,8 +36,9 @@ Unreal Editor의 상단 메뉴에서 다음 항목을 선택합니다.
 - `Tools > Graphics CVar Control`
 - `Tools > GPU Snapshot Comparison`
 - `Tools > Rendering Debug Views`
+- `Tools > GPU Profile Helper`
 
-`Graphics CVar Control`은 CVar와 Preset을 관리하고, `GPU Snapshot Comparison`은 GPU 성능을 측정하고 비교합니다. `Rendering Debug Views`에서는 Viewport의 렌더링 시각화 모드를 버튼으로 전환합니다.
+`Graphics CVar Control`은 CVar와 Preset을 관리하고, `GPU Snapshot Comparison`은 `stat gpu` 기반 GPU 성능을 측정하고 비교합니다. `Rendering Debug Views`에서는 Viewport의 렌더링 시각화 모드를 버튼으로 전환합니다. `GPU Profile Helper`는 ProfileGPU Queue/Pass를 촬영하고 관련 에셋 구성을 함께 기록합니다.
 
 ## Graphics CVar Control
 
@@ -226,6 +231,63 @@ GPU Pass Snapshot 전체가 비거나 `Queue Total`이 없으면 해당 표본�
 
 `Clear`를 누르면 Baseline과 Candidate Snapshot을 모두 초기화합니다.
 
+## GPU Profile Helper
+
+`Tools > GPU Profile Helper`에서 Unreal Engine의 ProfileGPU 결과를 단일 프레임 또는 여러 표본으로 수집하고 Baseline/Candidate를 비교할 수 있습니다.
+
+### 캡처 모드
+
+- `Capture Baseline`, `Capture Candidate`
+  - 현재 ProfileGPU 결과를 해당 비교 대상으로 저장
+- `Multi Capture`
+  - 지정한 `Samples`와 `Interval`에 따라 여러 ProfileGPU 표본 수집
+- `Open original GPU Visualizer`
+  - 단일 캡처 완료 후 Unreal 기본 GPU Visualizer 표시
+- `Cancel`
+  - 진행 중인 캡처를 취소하고 임시 CVar 복구
+- `Clear`
+  - 저장된 ProfileGPU Baseline/Candidate 초기화
+
+비교 결과에는 Graphics, Compute, Copy Queue와 Pass별 `Median`, `Avg`, `Range`, `Seen`이 표시됩니다. Candidate가 느려진 값은 빨간색, 개선된 값은 초록색으로 표시합니다. 유효한 캡처에서 감지되지 않은 Pass는 `0 ms`로 계산합니다.
+
+### Capture Context
+
+ProfileGPU 캡처에는 변경 메모와 관련 에셋·Actor 정보를 함께 저장할 수 있습니다.
+
+- Content Browser 에셋 또는 World Outliner Actor 드래그 앤 드롭
+- `Add Selected`로 현재 선택 에셋·Actor 추가
+- 에셋별 `Quantity` 입력
+- 개별 `Remove` 및 `Clear Related`
+
+에셋과 Actor는 이름뿐 아니라 Object Path와 Class Path로 식별합니다. 동일한 Actor와 원본 에셋이 함께 등록되면 Report에서 하나의 렌더링 대상으로 연결하여 수량과 비용을 이중 집계하지 않도록 안내합니다.
+
+### 관련 대상 내부 분석
+
+등록 시 다음 렌더링 관련 정보를 분석하여 캡처 데이터와 Report에 보존합니다.
+
+- Blueprint/Actor의 컴포넌트 종류와 개수
+- Static/Skeletal Mesh 및 Material 참조
+- 가시성, 그림자, Custom Depth와 반투명 Material
+- Light와 SceneCapture 설정
+- Static Mesh LOD, Material Slot과 Nanite 설정
+- Niagara Emitter 활성 상태, CPU/GPU Sim, Bounds 방식
+- Niagara Renderer 종류, 활성 상태, Material과 반투명 여부
+
+관련 대상 목록에 마우스를 올리면 전체 분석 내용을 확인할 수 있습니다. 등록 이후 에셋 설정이 변경됐다면 기존 항목을 제거하고 다시 등록해야 분석 내용이 갱신됩니다.
+
+### ProfileGPU AI Report
+
+Baseline 캡처 후 `Export AI Report`를 누르면 `Reports/ProfileGPU`에 Markdown과 JSON 파일을 생성합니다.
+
+- 캡처 메모, 수량과 관련 대상 내부 분석
+- Actor와 원본 에셋 연결 및 중복 집계 방지 정보
+- 추가, 제거, 수량 변화와 내부 분석 변화
+- Queue/Pass별 Median, Average, Range, Seen
+- Exclusive/Inclusive 원본 표본 배열
+- 비교 조건과 해석 주의사항
+
+Markdown에는 Median 절대 변화량 상위 50개를 기록하고 JSON에는 전체 ProfileGPU Pass와 모든 표본을 유지합니다. ProfileGPU 캡처 데이터는 에디터 메모리에만 유지되며 생성된 Report만 파일로 남습니다.
+
 ## AI 분석 보고서
 
 Baseline을 캡처한 후 `Export AI Report`를 누르면 보고서가 자동 생성됩니다. Candidate도 있으면 기존 비교 보고서를 생성하고, Candidate가 없으면 비용이 큰 GPU Pass를 찾기 위한 Baseline 단독 분석 보고서를 생성합니다.
@@ -233,13 +295,17 @@ Baseline을 캡처한 후 `Export AI Report`를 누르면 보고서가 자동 �
 저장 폴더:
 
 ```text
-Plugins/GraphicsCVarControl/Reports
+Plugins/GraphicsCVarControl/Reports/StatGPU
+Plugins/GraphicsCVarControl/Reports/SpikeLogs
+Plugins/GraphicsCVarControl/Reports/ProfileGPU
 ```
 
 현재 프로젝트의 절대 경로:
 
 ```text
-C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
+C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports\StatGPU
+C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports\SpikeLogs
+C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports\ProfileGPU
 ```
 
 생성 파일:
@@ -250,6 +316,8 @@ C:\Users\user\Desktop\Pharaoh\Project\Plugins\GraphicsCVarControl\Reports
 - `GPUProfile_YYYYMMDD_HHMMSS_MMM.json`
 - `GPUSpikeLog_YYYYMMDD_HHMMSS_MMM.md`
 - `GPUSpikeLog_YYYYMMDD_HHMMSS_MMM.json`
+- `ProfileGPU_AIReport_YYYYMMDD_HHMMSS.md`
+- `ProfileGPU_AIReport_YYYYMMDD_HHMMSS.json`
 
 `Export Spike Log`는 Baseline 또는 Candidate에서 감지된 스파이크가 있을 때 활성화됩니다. Spike Log에는 사건별 Total GPU 전후 표본, 정렬된 Pass 변화량, Pass 표본 유효률과 반복적으로 증가한 Pass 집계가 포함됩니다.
 
@@ -308,8 +376,10 @@ AI Report와 Spike Log를 함께 분석할 때는 각 파일의 `Capture ID`가 
 |---|---|---|
 | Preset 1~5 | `GEditorPerProjectIni` | 유지 |
 | Baseline/Candidate Snapshot | 에디터 메모리 | 유지되지 않음 |
-| AI 보고서 | `Reports` 폴더 | 유지 |
-| Spike Log | `Reports` 폴더 | 유지 |
+| ProfileGPU Baseline/Candidate | 에디터 메모리 | 유지되지 않음 |
+| Stat GPU AI 보고서 | `Reports/StatGPU` 폴더 | 유지 |
+| Spike Log | `Reports/SpikeLogs` 폴더 | 유지 |
+| ProfileGPU AI 보고서 | `Reports/ProfileGPU` 폴더 | 유지 |
 
 ## 구현 구조
 
@@ -324,7 +394,15 @@ AI Report와 Spike Log를 함께 분석할 때는 각 파일의 `Capture ID`가 
 - `Private/GraphicsCVarProfiler.h/.cpp`
   - GPU 캡처, 연속 기록, 통계 누적, Snapshot 비교, 스파이크 감지 및 Pass 정렬
 - `Private/GraphicsCVarReportExporter.h/.cpp`
-  - AI Report와 Spike Log Markdown/JSON 생성 및 `Reports` 저장
+  - AI Report와 Spike Log Markdown/JSON 생성 및 종류별 하위 폴더 저장
+- `Private/GraphicsCVarProfileGPUCapture.h/.cpp`
+  - ProfileGPU 실행, 임시 CVar 관리, 로그 파싱과 Baseline/Candidate 표본 저장
+- `Private/GraphicsCVarProfileGPUHelper.h/.cpp`
+  - ProfileGPU 캡처, 관련 대상 등록, 통계 비교와 Report Export UI
+- `Private/GraphicsCVarProfileGPUAssetAnalyzer.h/.cpp`
+  - 등록된 에셋·Actor와 Niagara 렌더링 구성 분석
+- `Private/GraphicsCVarProfileGPUReportExporter.h/.cpp`
+  - ProfileGPU 통계와 관련 대상 변경 정보를 AI용 Markdown/JSON으로 생성
 - `AI_REPORT_GUIDE.md`
   - AI 보고서 해석 규칙과 권장 프롬프트
 - `CHANGELOG.md`

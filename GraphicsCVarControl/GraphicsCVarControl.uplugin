@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 10,
-	"VersionName": "1.9.0",
+	"Version": 11,
+	"VersionName": "2.0.0",
 	"FriendlyName": "Graphics CVar Control",
-	"Description": "Editor tools for graphics CVar control, rendering debug views, GPU snapshot comparison, spike tracking, and AI-ready performance reports.",
+	"Description": "Editor tools for graphics CVar control, stat GPU snapshots, ProfileGPU comparison, rendering asset context analysis, spike tracking, and AI-ready reports.",
 	"Category": "Rendering",
 	"CreatedBy": "DotheZac",
 	"CreatedByURL": "",
@@ -20,6 +20,12 @@
 			"Name": "GraphicsCVarControlEditor",
 			"Type": "Editor",
 			"LoadingPhase": "PostEngineInit"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Niagara",
+			"Enabled": true
 		}
 	]
 }

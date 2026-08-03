@@ -1,3 +1,21 @@
+## 2.0.0
+- `Tools > GPU Profile Helper` 독립 창과 ProfileGPU Baseline/Candidate 캡처 기능 추가
+- 단일 촬영과 Multi Capture 모드, 촬영 횟수 및 간격 설정, 캡처 취소와 결과 초기화 기능 추가
+- ProfileGPU 실행 중 필요한 CVar를 임시 적용하고 캡처 완료 또는 취소 시 기존 값으로 복구하도록 구성
+- Graphics, Compute, Copy Queue와 Pass 계층을 파싱하고 Exclusive/Inclusive 시간 및 Draw/Dispatch 정보를 수집
+- Queue 및 Pass별 Median, Average, Range, Seen 통계와 Baseline/Candidate 변화량 비교 UI 추가
+- 누락된 Pass는 유효한 캡처 표본 안에서 `0 ms`로 계산하고 악화는 빨간색, 개선은 초록색으로 표시
+- 캡처 메모와 관련 에셋·World Outliner Actor 등록, 드래그 앤 드롭, 선택 추가, 개별 제거 및 초기화 기능 추가
+- 에셋별 `Quantity` 입력과 실제 Actor 인스턴스의 중복 수량 계산 방지 기능 추가
+- Blueprint/Actor 컴포넌트, Mesh, Material, Light, SceneCapture 및 주요 렌더링 플래그 분석 기능 추가
+- Niagara System의 Emitter 활성 상태, CPU/GPU Sim, Bounds, Renderer, Material과 반투명 여부 상세 분석 기능 추가
+- Actor와 원본 Blueprint, Niagara System, Static Mesh, Skeletal Mesh의 참조 관계를 Report에 연결하고 동일 렌더링 대상의 이중 집계 방지
+- 관련 대상의 추가, 제거, 수량 변화, 내부 분석 변화 및 연결된 인스턴스를 자동 비교하는 `Capture Context Changes` 추가
+- ProfileGPU 비교와 에셋 분석을 함께 제공하는 AI용 Markdown/JSON Report 출력 기능 추가
+- Markdown은 Median 절대 변화량 상위 50개만 표시하고 JSON은 전체 Pass와 원본 샘플 배열을 유지하도록 구성
+- Stat GPU AI Report, Spike Log, ProfileGPU Report를 각각 `Reports/StatGPU`, `Reports/SpikeLogs`, `Reports/ProfileGPU` 폴더로 분리
+- Niagara 상세 분석을 위해 플러그인 및 Editor 모듈에 Niagara 의존성 추가
+
 ## 1.9.0
 - 연속 Baseline/Candidate 기록 중 Total GPU의 이동 중앙값과 프레임 예산을 기준으로 순간 부하를 감지하는 `Spike Tracking` 기능 추가
 - Frame Budget, Delta Threshold, Rolling Frames 설정과 스파이크 전 30프레임/후 60프레임 보존 기능 추가

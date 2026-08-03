@@ -9,11 +9,13 @@ public class GraphicsCVarControlEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"ContentBrowser",
 				"Core",
 				"CoreUObject",
 				"Engine",
 				"Json",
 				"LevelEditor",
+				"Niagara",
 				"Projects",
 				"RHI",
 				"Slate",

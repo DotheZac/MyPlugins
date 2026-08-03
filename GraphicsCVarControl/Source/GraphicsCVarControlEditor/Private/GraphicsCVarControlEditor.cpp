@@ -1,6 +1,8 @@
 #include "Modules/ModuleManager.h"
 
 #include "GraphicsCVarDebugViews.h"
+#include "GraphicsCVarProfileGPUCapture.h"
+#include "GraphicsCVarProfileGPUHelper.h"
 #include "GraphicsCVarProfiler.h"
 #include "GraphicsCVarReportExporter.h"
 
@@ -33,6 +35,7 @@
 static const FName GraphicsCVarControlTabName(TEXT("GraphicsCVarControl"));
 static const FName GraphicsCVarProfilerTabName(TEXT("GraphicsCVarProfiler"));
 static const FName GraphicsCVarDebugViewsTabName(TEXT("GraphicsCVarDebugViews"));
+static const FName GraphicsCVarProfileGPUHelperTabName(TEXT("GraphicsCVarProfileGPUHelper"));
 
 class SGPUTotalHistoryGraph final : public SLeafWidget
 {
@@ -929,7 +932,7 @@ private:
 								.Text(FText::FromString(TEXT("Export AI Report")))
 								.ToolTipText(FText::FromString(TEXT(
 									"Baseline 단독 분석 또는 Baseline/Candidate 비교 결과를 AI 분석용 Markdown과 JSON 파일로 저장합니다.\n"
-									"플러그인의 Reports 폴더에 자동으로 생성됩니다.\n"
+									"플러그인의 Reports/StatGPU 폴더에 자동으로 생성됩니다.\n"
 									"Baseline만 캡처한 상태에서도 사용할 수 있습니다.")))
 								.IsEnabled_Lambda([]()
 								{
@@ -968,7 +971,7 @@ private:
 								.Text(FText::FromString(TEXT("Export Spike Log")))
 								.ToolTipText(FText::FromString(TEXT(
 									"감지된 Baseline/Candidate 스파이크 사건만 별도의 Markdown과 JSON 로그로 저장합니다.\n"
-									"파일은 플러그인의 Reports 폴더에 GPUSpikeLog 이름으로 생성됩니다.")))
+									"파일은 플러그인의 Reports/SpikeLogs 폴더에 GPUSpikeLog 이름으로 생성됩니다.")))
 								.IsEnabled_Lambda([]()
 								{
 									const FGraphicsCVarProfiler& Profiler =
@@ -1945,6 +1948,12 @@ public:
 			.SetDisplayName(FText::FromString(TEXT("Rendering Debug Views")))
 			.SetMenuType(ETabSpawnerMenuType::Hidden);
 
+		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+			GraphicsCVarProfileGPUHelperTabName,
+			FOnSpawnTab::CreateRaw(this, &FGraphicsCVarControlEditorModule::SpawnProfileGPUHelperTab))
+			.SetDisplayName(FText::FromString(TEXT("GPU Profile Helper")))
+			.SetMenuType(ETabSpawnerMenuType::Hidden);
+
 		UToolMenus::RegisterStartupCallback(
 			FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FGraphicsCVarControlEditorModule::RegisterMenus));
 	}
@@ -1958,11 +1967,13 @@ public:
 		}
 
 		FGraphicsCVarProfiler::Get().Shutdown();
+		FGraphicsCVarProfileGPUCaptureService::Get().Shutdown();
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarControlTabName);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarProfilerTabName);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarDebugViewsTabName);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GraphicsCVarProfileGPUHelperTabName);
 	}
 
 private:
@@ -2019,6 +2030,21 @@ private:
 			];
 	}
 
+	TSharedRef<SDockTab> SpawnProfileGPUHelperTab(const FSpawnTabArgs& Args)
+	{
+		(void)Args;
+
+		return SNew(SDockTab)
+			.TabRole(ETabRole::NomadTab)
+			[
+				SNew(SBox)
+				.WidthOverride(1120.0f)
+				[
+					SNew(SGraphicsCVarProfileGPUHelperPanel)
+				]
+			];
+	}
+
 	void RegisterMenus()
 	{
 		FToolMenuOwnerScoped OwnerScoped(this);
@@ -2045,6 +2071,13 @@ private:
 			FText::FromString(TEXT("Open viewport rendering visualization controls.")),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateStatic(&FGraphicsCVarControlEditorModule::OpenDebugViewsTab)));
+
+		Section.AddMenuEntry(
+			TEXT("OpenGraphicsCVarProfileGPUHelper"),
+			FText::FromString(TEXT("GPU Profile Helper")),
+			FText::FromString(TEXT("Capture and inspect detailed ProfileGPU pass timings.")),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateStatic(&FGraphicsCVarControlEditorModule::OpenProfileGPUHelperTab)));
 	}
 
 	static void OpenControlTab()
@@ -2060,6 +2093,11 @@ private:
 	static void OpenDebugViewsTab()
 	{
 		FGlobalTabmanager::Get()->TryInvokeTab(GraphicsCVarDebugViewsTabName);
+	}
+
+	static void OpenProfileGPUHelperTab()
+	{
+		FGlobalTabmanager::Get()->TryInvokeTab(GraphicsCVarProfileGPUHelperTabName);
 	}
 
 	FDelegateHandle BeginPIEHandle;

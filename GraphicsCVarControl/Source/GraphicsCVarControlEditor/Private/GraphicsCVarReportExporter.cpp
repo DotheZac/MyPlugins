@@ -1065,7 +1065,8 @@ FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportReport(
 
 	const FString ReportDirectory = FPaths::Combine(
 		Plugin->GetBaseDir(),
-		TEXT("Reports"));
+		TEXT("Reports"),
+		TEXT("StatGPU"));
 	IFileManager::Get().MakeDirectory(*ReportDirectory, true);
 	if (!IFileManager::Get().DirectoryExists(*ReportDirectory))
 	{
@@ -1164,7 +1165,8 @@ FGraphicsCVarReportExportResult FGraphicsCVarReportExporter::ExportSpikeLog(
 
 	const FString ReportDirectory = FPaths::Combine(
 		Plugin->GetBaseDir(),
-		TEXT("Reports"));
+		TEXT("Reports"),
+		TEXT("SpikeLogs"));
 	IFileManager::Get().MakeDirectory(*ReportDirectory, true);
 	if (!IFileManager::Get().DirectoryExists(*ReportDirectory))
 	{
