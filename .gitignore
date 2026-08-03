@@ -8,6 +8,7 @@
 !/Nubi/
 !/UIEffect/
 !/GraphicsCVarControl/
+!/PortalEffect/
 
 # 허용한 폴더 내부 파일도 추적
 !/ShadowControl/**
@@ -16,9 +17,12 @@
 !/Nubi/**
 !/UIEffect/**
 !/GraphicsCVarControl/**
+!/PortalEffect/**
 
 # TranslucentWall 빌드 산출물 제외
 /TranslucentWall/Binaries/
 /TranslucentWall/Intermediate/
 /GraphicsCVarControl/Binaries/
 /GraphicsCVarControl/Intermediate/
+/PortalEffect/Binaries/
+/PortalEffect/Intermediate/
