@@ -252,6 +252,8 @@ struct FCVarControl
 	const TCHAR* DisplayName;
 	const TCHAR* CVarName;
 	TArray<FCVarOption> Options;
+	const TCHAR* EnabledWhenCVar = nullptr;
+	const TCHAR* EnabledWhenValue = nullptr;
 };
 
 static const TArray<FCVarControl>& GetGraphicsCVarControls()
@@ -263,9 +265,11 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 		Result.Add({ TEXT("Anti-Aliasing"), TEXT("AA Method"), TEXT("r.AntiAliasingMethod"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("FXAA"), TEXT("1") }, { TEXT("TAA"), TEXT("2") }, { TEXT("TSR"), TEXT("4") } } });
 		Result.Add({ TEXT("Anti-Aliasing"), TEXT("TAA Quality"), TEXT("r.TemporalAA.Quality"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("Basic"), TEXT("1") }, { TEXT("High"), TEXT("2") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Basic"), TEXT("1") }, { TEXT("High"), TEXT("2") } },
+			TEXT("r.AntiAliasingMethod"), TEXT("2") });
 		Result.Add({ TEXT("Anti-Aliasing"), TEXT("FXAA Quality"), TEXT("r.FXAA.Quality"),
-			{ { TEXT("0"), TEXT("0") }, { TEXT("2"), TEXT("2") }, { TEXT("4"), TEXT("4") }, { TEXT("5"), TEXT("5") } } });
+			{ { TEXT("0"), TEXT("0") }, { TEXT("2"), TEXT("2") }, { TEXT("4"), TEXT("4") }, { TEXT("5"), TEXT("5") } },
+			TEXT("r.AntiAliasingMethod"), TEXT("1") });
 
 		Result.Add({ TEXT("Resolution"), TEXT("Screen Percentage"), TEXT("r.ScreenPercentage"),
 			{ { TEXT("50"), TEXT("50") }, { TEXT("70"), TEXT("70") }, { TEXT("100"), TEXT("100") }, { TEXT("120"), TEXT("120") } } });
@@ -277,33 +281,45 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflections"), TEXT("r.Lumen.Reflections.Allow"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Resolution"), TEXT("r.Lumen.Reflections.DownsampleFactor"),
-			{ { TEXT("High"), TEXT("1") }, { TEXT("Balanced"), TEXT("2") }, { TEXT("Performance"), TEXT("4") } } });
+			{ { TEXT("High"), TEXT("1") }, { TEXT("Balanced"), TEXT("2") }, { TEXT("Performance"), TEXT("4") } },
+			TEXT("r.Lumen.Reflections.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Probe Spacing"), TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"),
-			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } } });
+			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } },
+			TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Screen Traces"), TEXT("r.Lumen.ScreenProbeGather.ScreenTraces"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } },
+			TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Mesh SDF Tracing"), TEXT("r.Lumen.ScreenProbeGather.TraceMeshSDFs"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } },
+			TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Trace Resolution"), TEXT("r.Lumen.ScreenProbeGather.TracingOctahedronResolution"),
-			{ { TEXT("Performance"), TEXT("4") }, { TEXT("Balanced"), TEXT("8") }, { TEXT("High"), TEXT("16") } } });
+			{ { TEXT("Performance"), TEXT("4") }, { TEXT("Balanced"), TEXT("8") }, { TEXT("High"), TEXT("16") } },
+			TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Gather Resolution"), TEXT("r.Lumen.ScreenProbeGather.GatherOctahedronResolutionScale"),
-			{ { TEXT("Performance"), TEXT("0.5") }, { TEXT("Balanced"), TEXT("1") }, { TEXT("High"), TEXT("2") } } });
+			{ { TEXT("Performance"), TEXT("0.5") }, { TEXT("Balanced"), TEXT("1") }, { TEXT("High"), TEXT("2") } },
+			TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen GI Adaptive Probes"), TEXT("r.Lumen.ScreenProbeGather.NumAdaptiveProbes"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("Low"), TEXT("4") }, { TEXT("Medium"), TEXT("8") }, { TEXT("High"), TEXT("16") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Low"), TEXT("4") }, { TEXT("Medium"), TEXT("8") }, { TEXT("High"), TEXT("16") } },
+			TEXT("r.Lumen.DiffuseIndirect.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Screen Traces"), TEXT("r.Lumen.Reflections.ScreenTraces"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } },
+			TEXT("r.Lumen.Reflections.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Mesh SDF Tracing"), TEXT("r.Lumen.Reflections.TraceMeshSDFs"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } },
+			TEXT("r.Lumen.Reflections.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Lumen Reflection Max Roughness"), TEXT("r.Lumen.Reflections.MaxRoughnessToTrace"),
-			{ { TEXT("Use PPV"), TEXT("-1") }, { TEXT("0.4"), TEXT("0.4") }, { TEXT("0.6"), TEXT("0.6") }, { TEXT("0.8"), TEXT("0.8") } } });
+			{ { TEXT("Use PPV"), TEXT("-1") }, { TEXT("0.4"), TEXT("0.4") }, { TEXT("0.6"), TEXT("0.6") }, { TEXT("0.8"), TEXT("0.8") } },
+			TEXT("r.Lumen.Reflections.Allow"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Shadow Quality"), TEXT("r.ShadowQuality"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("2") }, { TEXT("Max"), TEXT("5") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("Virtual Shadows"), TEXT("r.Shadow.Virtual.Enable"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
 		Result.Add({ TEXT("Lighting"), TEXT("VSM Directional Rays"), TEXT("r.Shadow.Virtual.SMRT.RayCountDirectional"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } },
+			TEXT("r.Shadow.Virtual.Enable"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("VSM Local Rays"), TEXT("r.Shadow.Virtual.SMRT.RayCountLocal"),
-			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } } });
+			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } },
+			TEXT("r.Shadow.Virtual.Enable"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Ambient Occlusion"), TEXT("r.AmbientOcclusionLevels"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Low"), TEXT("1") }, { TEXT("High"), TEXT("3") } } });
 
@@ -318,7 +334,8 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 		Result.Add({ TEXT("Post Process"), TEXT("Volumetric Fog"), TEXT("r.VolumetricFog"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("On"), TEXT("1") } } });
 		Result.Add({ TEXT("Post Process"), TEXT("Volumetric Fog Grid"), TEXT("r.VolumetricFog.GridPixelSize"),
-			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } } });
+			{ { TEXT("High"), TEXT("8") }, { TEXT("Balanced"), TEXT("16") }, { TEXT("Performance"), TEXT("32") } },
+			TEXT("r.VolumetricFog"), TEXT("1") });
 		Result.Add({ TEXT("Post Process"), TEXT("Separate Translucency Resolution"), TEXT("r.SeparateTranslucencyScreenPercentage"),
 			{ { TEXT("50%"), TEXT("50") }, { TEXT("75%"), TEXT("75") }, { TEXT("100%"), TEXT("100") } } });
 
@@ -514,6 +531,80 @@ static FString GetCVarValue(const FString& CVarName)
 		return Variable->GetString();
 	}
 	return TEXT("missing");
+}
+
+static bool DoesCVarValueMatchOption(
+	const FString& CVarName,
+	const FString& OptionValue)
+{
+	const FString CurrentValue = GetCVarValue(CVarName).TrimStartAndEnd();
+	const FString ExpectedValue = OptionValue.TrimStartAndEnd();
+	if (CurrentValue == ExpectedValue)
+	{
+		return true;
+	}
+	if (CurrentValue.IsNumeric() && ExpectedValue.IsNumeric())
+	{
+		return FMath::IsNearlyEqual(
+			FCString::Atod(*CurrentValue),
+			FCString::Atod(*ExpectedValue),
+			UE_DOUBLE_SMALL_NUMBER);
+	}
+	return false;
+}
+
+static bool IsCVarControlEffective(const FCVarControl& Control)
+{
+	return !Control.EnabledWhenCVar || !Control.EnabledWhenValue ||
+		DoesCVarValueMatchOption(
+			FString(Control.EnabledWhenCVar),
+			FString(Control.EnabledWhenValue));
+}
+
+static FString GetCVarControlStateText(const FCVarControl& Control)
+{
+	const FString CVarName(Control.CVarName);
+	const FString CurrentValue = GetCVarValue(CVarName).TrimStartAndEnd();
+	if (CurrentValue.IsEmpty() || CurrentValue.Equals(TEXT("missing"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("현재: 조회 불가");
+	}
+	if (!IsCVarControlEffective(Control))
+	{
+		return FString::Printf(TEXT("현재: %s · 적용 안 됨"), *CurrentValue);
+	}
+
+	for (const FCVarOption& Option : Control.Options)
+	{
+		if (DoesCVarValueMatchOption(CVarName, FString(Option.Value)))
+		{
+			return FString::Printf(TEXT("현재: %s (%s)"), Option.Label, *CurrentValue);
+		}
+	}
+	return FString::Printf(TEXT("현재: %s · 프리셋 외"), *CurrentValue);
+}
+
+static FSlateColor GetCVarControlStateColor(const FCVarControl& Control)
+{
+	const FString CVarName(Control.CVarName);
+	const FString CurrentValue = GetCVarValue(CVarName).TrimStartAndEnd();
+	if (CurrentValue.IsEmpty() || CurrentValue.Equals(TEXT("missing"), ESearchCase::IgnoreCase))
+	{
+		return FSlateColor(FLinearColor(0.95f, 0.18f, 0.14f, 1.0f));
+	}
+	if (!IsCVarControlEffective(Control))
+	{
+		return FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f, 1.0f));
+	}
+
+	for (const FCVarOption& Option : Control.Options)
+	{
+		if (DoesCVarValueMatchOption(CVarName, FString(Option.Value)))
+		{
+			return FSlateColor(FLinearColor(0.08f, 0.9f, 0.24f, 1.0f));
+		}
+	}
+	return FSlateColor(FLinearColor(0.25f, 0.65f, 1.0f, 1.0f));
 }
 
 static bool SetCVarValue(
@@ -1832,6 +1923,13 @@ private:
 		TSharedRef<SHorizontalBox> OptionsBox = SNew(SHorizontalBox);
 		const FString CVarName(Control.CVarName);
 		const FString Description = GetCVarDescription(CVarName);
+		const FString ControlTooltip = Control.EnabledWhenCVar && Control.EnabledWhenValue
+			? FString::Printf(
+				TEXT("%s\n\n활성 조건: %s = %s"),
+				*Description,
+				Control.EnabledWhenCVar,
+				Control.EnabledWhenValue)
+			: Description;
 
 		for (const FCVarOption& Option : Control.Options)
 		{
@@ -1841,24 +1939,58 @@ private:
 				.AutoWidth()
 				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SButton)
-					.Text(FText::FromString(OptionLabel))
-					.ToolTipText(FText::FromString(FString::Printf(
-						TEXT("%s\n\n적용 값: %s (%s)"),
-						*Description,
-						*Value,
-						*OptionLabel)))
-					.OnClicked_Lambda([CVarName, Value]()
-					{
-						SetCVarValue(CVarName, Value);
-						return FReply::Handled();
-					})
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.HAlign(HAlign_Center)
+					.Padding(0.0f, 0.0f, 0.0f, 3.0f)
+					[
+						SNew(SBox)
+						.WidthOverride(14.0f)
+						.HeightOverride(4.0f)
+						[
+							SNew(SBorder)
+							.Padding(0.0f)
+							.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+							.BorderBackgroundColor_Lambda([CVarName, Value]()
+							{
+								return FSlateColor(
+									DoesCVarValueMatchOption(CVarName, Value)
+										? FLinearColor(0.08f, 0.9f, 0.24f, 1.0f)
+										: FLinearColor(0.075f, 0.085f, 0.095f, 1.0f));
+							})
+						]
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(SButton)
+						.Text(FText::FromString(OptionLabel))
+						.IsEnabled_Lambda([Control]()
+						{
+							return IsCVarControlEffective(Control);
+						})
+						.ToolTipText(FText::FromString(FString::Printf(
+							TEXT("%s\n\n적용 값: %s (%s)"),
+							*ControlTooltip,
+							*Value,
+							*OptionLabel)))
+						.OnClicked_Lambda([CVarName, Value]()
+						{
+							SetCVarValue(CVarName, Value);
+							return FReply::Handled();
+						})
+					]
 				];
 		}
 
 		return SNew(SBorder)
 			.Padding(8.0f)
-			.ToolTipText(FText::FromString(Description))
+			.ToolTipText(FText::FromString(ControlTooltip))
+			.ColorAndOpacity_Lambda([Control]()
+			{
+				return FLinearColor(1.0f, 1.0f, 1.0f, IsCVarControlEffective(Control) ? 1.0f : 0.4f);
+			})
 			.Visibility_Lambda([this, Control]()
 			{
 				return DoesControlMatch(Control)
@@ -1891,10 +2023,15 @@ private:
 				.VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
-					.Text_Lambda([CVarName]()
+					.Text_Lambda([Control]()
 					{
-						return FText::FromString(FString::Printf(TEXT("Value: %s"), *GetCVarValue(CVarName)));
+						return FText::FromString(GetCVarControlStateText(Control));
 					})
+					.ColorAndOpacity_Lambda([Control]()
+					{
+						return GetCVarControlStateColor(Control);
+					})
+					.ToolTipText(FText::FromString(TEXT("현재 CVar 값과 프리셋 일치 여부를 표시합니다. '프리셋 외'는 값이 켜지지 않았다는 뜻이 아니라, 준비된 버튼과 정확히 일치하지 않는다는 뜻입니다.")))
 				]
 				+ SHorizontalBox::Slot()
 				.FillWidth(0.48f)

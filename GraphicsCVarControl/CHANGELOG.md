@@ -1,3 +1,10 @@
+## 2.1.0
+- 각 CVar 옵션 버튼 위에 현재값과 일치하는 프리셋을 나타내는 초록색 선택 표시 추가
+- 문자열 및 숫자형 CVar 값을 비교하여 `1`, `1.0`처럼 표기만 다른 값도 동일한 프리셋으로 인식
+- AA 방식, Lumen GI/Reflection, Virtual Shadow Map, Volumetric Fog의 상위 설정에 따라 관련 하위 옵션을 자동 비활성화하고 반투명 표시
+- 현재 CVar 상태를 프리셋 일치, 프리셋 외 값, 상위 옵션으로 인한 미적용, 조회 실패로 구분하여 색상과 함께 표시
+- 종속 옵션 툴팁에 활성화에 필요한 상위 CVar 조건 표시
+
 ## 2.0.0
 - `Tools > GPU Profile Helper` 독립 창과 ProfileGPU Baseline/Candidate 캡처 기능 추가
 - 단일 촬영과 Multi Capture 모드, 촬영 횟수 및 간격 설정, 캡처 취소와 결과 초기화 기능 추가
