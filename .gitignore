@@ -9,6 +9,7 @@
 !/UIEffect/
 !/GraphicsCVarControl/
 !/PortalEffect/
+!/CameraFocusFX/
 
 # 허용한 폴더 내부 파일도 추적
 !/ShadowControl/**
@@ -18,6 +19,7 @@
 !/UIEffect/**
 !/GraphicsCVarControl/**
 !/PortalEffect/**
+!/CameraFocusFX/**
 
 # TranslucentWall 빌드 산출물 제외
 /TranslucentWall/Binaries/
@@ -26,3 +28,5 @@
 /GraphicsCVarControl/Intermediate/
 /PortalEffect/Binaries/
 /PortalEffect/Intermediate/
+/CameraFocusFX/Binaries/
+/CameraFocusFX/Intermediate/

@@ -1,0 +1,21 @@
+{
+	"FileVersion": 3,
+	"Version": 4,
+	"VersionName": "1.1.2",
+	"FriendlyName": "Camera Focus FX",
+	"Description": "Zoom-driven local camera focus effects with vignette and depth of field.",
+	"Category": "Rendering",
+	"CreatedBy": "DotheZac",
+	"CanContainContent": true,
+	"EnabledByDefault": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "CameraFocusFX",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
