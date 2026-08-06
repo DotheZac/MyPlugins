@@ -320,6 +320,12 @@ static const TArray<FCVarControl>& GetGraphicsCVarControls()
 		Result.Add({ TEXT("Lighting"), TEXT("VSM Local Rays"), TEXT("r.Shadow.Virtual.SMRT.RayCountLocal"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Medium"), TEXT("4") }, { TEXT("High"), TEXT("7") } },
 			TEXT("r.Shadow.Virtual.Enable"), TEXT("1") });
+		Result.Add({ TEXT("Lighting"), TEXT("Single Layer Water VSM Shader Support"), TEXT("r.Water.SingleLayer.ShadersSupportVSMFiltering"),
+			{ { TEXT("0"), TEXT("0") }, { TEXT("1"), TEXT("1") } },
+			TEXT("r.Shadow.Virtual.Enable"), TEXT("1") });
+		Result.Add({ TEXT("Lighting"), TEXT("Single Layer Water VSM Filtering"), TEXT("r.Water.SingleLayer.VSMFiltering"),
+			{ { TEXT("0"), TEXT("0") }, { TEXT("1"), TEXT("1") } },
+			TEXT("r.Water.SingleLayer.ShadersSupportVSMFiltering"), TEXT("1") });
 		Result.Add({ TEXT("Lighting"), TEXT("Ambient Occlusion"), TEXT("r.AmbientOcclusionLevels"),
 			{ { TEXT("Off"), TEXT("0") }, { TEXT("Low"), TEXT("1") }, { TEXT("High"), TEXT("3") } } });
 

@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 12,
-	"VersionName": "2.1.0",
+	"Version": 13,
+	"VersionName": "2.2.0",
 	"FriendlyName": "Graphics CVar Control",
 	"Description": "Editor tools for graphics CVar control, stat GPU snapshots, ProfileGPU comparison, rendering asset context analysis, spike tracking, and AI-ready reports.",
 	"Category": "Rendering",

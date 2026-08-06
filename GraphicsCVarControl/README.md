@@ -2,7 +2,7 @@
 
 Unreal Engine 5.7 에디터에서 그래픽 CVar를 제어하고, Baseline/Candidate GPU 성능을 비교하며, 결과를 AI 분석용 보고서로 내보내는 Editor 전용 플러그인입니다.
 
-- 버전: `2.1.0`
+- 버전: `2.2.0`
 - 제작자: `DotheZac`
 - 모듈: `GraphicsCVarControlEditor`
 - 지원 환경: Unreal Engine 5.7 Editor
