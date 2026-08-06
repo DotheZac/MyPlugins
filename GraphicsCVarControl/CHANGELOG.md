@@ -1,3 +1,7 @@
+## 2.2.1
+- Stat GPU와 ProfileGPU 창에서 공통 `Reports` 폴더를 Windows Explorer로 바로 여는 버튼 추가
+- `PolygonCounter`로 인해 플러그인 빌드가 실패하던 오류 수정
+
 ## 2.2.0
 - Single Layer Water의 Virtual Shadow Map 셰이더 지원 및 필터링을 0/1로 제어하는 CVar 옵션 추가
 

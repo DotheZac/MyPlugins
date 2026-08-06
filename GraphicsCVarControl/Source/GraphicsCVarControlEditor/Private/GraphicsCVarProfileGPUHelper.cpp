@@ -8,7 +8,11 @@
 #include "GraphicsCVarProfileGPUAssetAnalyzer.h"
 #include "GraphicsCVarProfileGPUCapture.h"
 #include "GraphicsCVarProfileGPUReportExporter.h"
+#include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
 #include "IContentBrowserSingleton.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "Selection.h"
 
@@ -25,6 +29,27 @@
 
 namespace
 {
+	bool OpenProfileGPUReportFolder()
+	{
+		const TSharedPtr<IPlugin> Plugin =
+			IPluginManager::Get().FindPlugin(TEXT("GraphicsCVarControl"));
+		if (!Plugin.IsValid())
+		{
+			return false;
+		}
+
+		const FString ReportDirectory = FPaths::ConvertRelativePathToFull(
+			FPaths::Combine(Plugin->GetBaseDir(), TEXT("Reports")));
+		IFileManager::Get().MakeDirectory(*ReportDirectory, true);
+		if (!IFileManager::Get().DirectoryExists(*ReportDirectory))
+		{
+			return false;
+		}
+
+		FPlatformProcess::ExploreFolder(*ReportDirectory);
+		return true;
+	}
+
 	FGraphicsCVarProfileGPUContextObject MakeAssetContextObject(
 		const FAssetData& AssetData)
 	{
@@ -527,6 +552,23 @@ void SGraphicsCVarProfileGPUHelperPanel::Construct(const FArguments& InArgs)
 								*Result.MarkdownPath,
 								*Result.JsonPath)
 							: Result.ErrorMessage;
+						return FReply::Handled();
+					})
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 12.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(FText::FromString(TEXT("Open Report Folder")))
+					.ToolTipText(FText::FromString(
+						TEXT("Plugins/GraphicsCVarControl/Reports 폴더를 Windows Explorer에서 엽니다.")))
+					.OnClicked_Lambda([this]()
+					{
+						bLastExportSucceeded = OpenProfileGPUReportFolder();
+						ExportStatusMessage = bLastExportSucceeded
+							? TEXT("Opened the Reports folder.")
+							: TEXT("Failed to open the Reports folder.");
 						return FReply::Handled();
 					})
 				]
