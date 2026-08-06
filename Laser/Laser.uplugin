@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Laser",
+	"Description": "Reflective laser tracing with a cone-shaped emitter.",
+	"Category": "Rendering",
+	"CreatedBy": "DotheZac",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		}
+	],
+	"Modules": [
+		{
+			"Name": "Laser",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

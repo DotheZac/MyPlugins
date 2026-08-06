@@ -10,6 +10,7 @@
 !/GraphicsCVarControl/
 !/PortalEffect/
 !/CameraFocusFX/
+!/Laser/
 
 # 허용한 폴더 내부 파일도 추적
 !/ShadowControl/**
@@ -20,6 +21,7 @@
 !/GraphicsCVarControl/**
 !/PortalEffect/**
 !/CameraFocusFX/**
+!/Laser/**
 
 # TranslucentWall 빌드 산출물 제외
 /TranslucentWall/Binaries/
@@ -30,3 +32,5 @@
 /PortalEffect/Intermediate/
 /CameraFocusFX/Binaries/
 /CameraFocusFX/Intermediate/
+/Laser/Binaries/
+/Laser/Intermediate/
