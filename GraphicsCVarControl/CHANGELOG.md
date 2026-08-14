@@ -1,3 +1,7 @@
+## 2.3.0
+- 현재 CVar 값과 일치하는 옵션을 초록색 패널로 강조하고, 프리셋 외 값·미적용·조회 실패 상태를 서로 다른 색상으로 구분하는 시각적 상태 표시 추가
+- `Tools > Rendering Debug Views`에서 Lit, Wireframe, Shader Complexity, Quad Overdraw, Light Complexity 및 Lumen Visualization을 전환하고 현재 활성 모드와 적용 결과를 색상으로 확인하는 기능 추가
+
 ## 2.2.1
 - Stat GPU와 ProfileGPU 창에서 공통 `Reports` 폴더를 Windows Explorer로 바로 여는 버튼 추가
 - `PolygonCounter`로 인해 플러그인 빌드가 실패하던 오류 수정
