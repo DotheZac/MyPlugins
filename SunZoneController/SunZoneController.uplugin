@@ -1,0 +1,21 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "Sun Zone Controller",
+	"Description": "Interpolates a sun actor between start and end rotations based on an integer zone index.",
+	"Category": "Rendering",
+	"CreatedBy": "DotheZac",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"EnabledByDefault": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "SunZoneController",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

@@ -11,6 +11,9 @@
 !/PortalEffect/
 !/CameraFocusFX/
 !/Laser/
+!/Crack/
+!/SandEffect/
+!/SunZoneController/
 
 # 허용한 폴더 내부 파일도 추적
 !/ShadowControl/**
@@ -22,6 +25,9 @@
 !/PortalEffect/**
 !/CameraFocusFX/**
 !/Laser/**
+!/Crack/**
+!/SandEffect/**
+!/SunZoneController/**
 
 # TranslucentWall 빌드 산출물 제외
 /TranslucentWall/Binaries/
@@ -34,3 +40,9 @@
 /CameraFocusFX/Intermediate/
 /Laser/Binaries/
 /Laser/Intermediate/
+/Crack/Binaries/
+/Crack/Intermediate/
+/SandEffect/Binaries/
+/SandEffect/Intermediate/
+/SunZoneController/Binaries/
+/SunZoneController/Intermediate/
