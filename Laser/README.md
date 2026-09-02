@@ -137,7 +137,9 @@ Get Laser Direction
 Clear
 ```
 
-새 플레이 세션이 시작되면 `Laser Reflection Actor`의 `IsClear`는 항상 `false`로 초기화됩니다. 이후 레이저 경로가 `Clear` 태그에 처음 닿으면 `IsClear`가 `true`로 변경되고 화면에 녹색 `true`가 한 번 출력됩니다. 같은 플레이 세션에서는 레이저가 목표에서 벗어나더라도 자동으로 `false`로 돌아가지 않습니다.
+새 플레이 세션이 시작되면 `Laser Reflection Actor`의 `IsClear`는 항상 `false`로 초기화됩니다. 레이저 경로가 `Clear` 태그에 닿아 있는 동안에는 `IsClear`가 `true`이며, 목표에서 벗어나는 즉시 다시 `false`가 됩니다.
+
+다른 Blueprint에서 `IsClear`가 일정 시간 동안 계속 `true`인지 검사하면, 레이저가 목표를 지정된 시간만큼 유지했을 때 원하는 함수를 실행할 수 있습니다.
 
 목표가 반사체 역할도 해야 한다면 동일한 Component 또는 Actor에 다음 태그를 함께 지정합니다.
 

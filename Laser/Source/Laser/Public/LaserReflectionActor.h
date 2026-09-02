@@ -70,7 +70,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Laser|Goal")
 	FName ClearTag = TEXT("Clear");
 
-	/** Latched to true the first time the laser reaches a Clear-tagged target. */
+	/** True only while the current laser path reaches a Clear-tagged target. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Laser|Goal")
 	bool IsClear = false;
 
@@ -119,7 +119,7 @@ private:
 	void UpdateEmitterTransform();
 	bool HitHasTag(const FHitResult& Hit, FName Tag) const;
 	bool IsReflectiveHit(const FHitResult& Hit) const;
-	void UpdateClearStateFromHit(const FHitResult& Hit);
+	void SetClearState(bool bNewIsClear);
 	void UpdateNiagaraSegments();
 	UNiagaraComponent* GetOrCreateNiagaraSegment(int32 SegmentIndex);
 	void DeactivateNiagaraSegmentsFrom(int32 FirstInactiveIndex);

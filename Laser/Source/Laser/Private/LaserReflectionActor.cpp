@@ -6,7 +6,6 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
-#include "Kismet/KismetSystemLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
@@ -122,15 +121,14 @@ bool ALaserReflectionActor::HitHasTag(const FHitResult& Hit, const FName Tag) co
 	return IsValid(HitActor) && HitActor->ActorHasTag(Tag);
 }
 
-void ALaserReflectionActor::UpdateClearStateFromHit(const FHitResult& Hit)
+void ALaserReflectionActor::SetClearState(const bool bNewIsClear)
 {
-	if (IsClear || !HitHasTag(Hit, ClearTag))
+	if (IsClear == bNewIsClear)
 	{
 		return;
 	}
 
-	IsClear = true;
-	UKismetSystemLibrary::PrintString(this, TEXT("true"), true, true, FLinearColor::Green, 2.0f);
+	IsClear = bNewIsClear;
 }
 
 void ALaserReflectionActor::UpdateLaserTrace()
@@ -141,6 +139,7 @@ void ALaserReflectionActor::UpdateLaserTrace()
 	UWorld* World = GetWorld();
 	if (!World || MaxDistance <= UE_KINDA_SMALL_NUMBER)
 	{
+		SetClearState(false);
 		DeactivateNiagaraSegmentsFrom(0);
 		return;
 	}
@@ -148,6 +147,7 @@ void ALaserReflectionActor::UpdateLaserTrace()
 	FVector CurrentStart = GetLaserOrigin();
 	FVector CurrentDirection = GetLaserDirection().GetSafeNormal();
 	float RemainingDistance = MaxDistance;
+	bool bReachedClearTarget = false;
 
 	LaserPoints.Add(CurrentStart);
 
@@ -183,7 +183,7 @@ void ALaserReflectionActor::UpdateLaserTrace()
 		}
 
 		LaserHits.Add(Hit);
-		UpdateClearStateFromHit(Hit);
+		bReachedClearTarget |= HitHasTag(Hit, ClearTag);
 		RemainingDistance = FMath::Max(0.0f, RemainingDistance - Hit.Distance);
 
 		if (!IsReflectiveHit(Hit))
@@ -201,6 +201,7 @@ void ALaserReflectionActor::UpdateLaserTrace()
 		RemainingDistance = FMath::Max(0.0f, RemainingDistance - SurfaceOffset);
 	}
 
+	SetClearState(bReachedClearTarget);
 	UpdateNiagaraSegments();
 }
 

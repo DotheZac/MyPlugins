@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.3
+
+- 기본 `CameraFocusFXPreset` Data Asset의 설정을 조정했습니다.
+
 ## 1.1.2
 
 - Data Asset과 컴포넌트의 편집 옵션에 한국어 툴팁을 추가했습니다.
